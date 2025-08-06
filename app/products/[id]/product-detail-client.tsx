@@ -1,0 +1,158 @@
+"use client"
+
+import type React from "react"
+import Image from "next/image"
+import { useCart } from "@/components/cart-provider"
+import { toast } from "@/hooks/use-toast"
+import { useState } from "react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { FavoriteButton } from "@/components/favorite-button"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+
+import type { Product } from "@/lib/types"
+
+interface ProductDetailClientProps {
+  initialProduct: Product;
+}
+
+export default function ProductDetailClient({ initialProduct }: ProductDetailClientProps) {
+  const [product] = useState(initialProduct)
+  const [customSize, setCustomSize] = useState("") // For metal art
+  const [customImage, setCustomImage] = useState<string | undefined>(undefined) // For metal art
+  const [selectedRingSize, setSelectedRingSize] = useState<string | undefined>(undefined) // For rings
+  const { addItem } = useCart()
+
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setCustomImage(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    } else {
+      setCustomImage(undefined)
+    }
+  }
+
+  const handleAddToCart = () => {
+    if (!product) return
+
+    let sizeToPass: string | undefined = undefined
+    let imageToPass: string | undefined = undefined
+
+    // Handle size based on product category
+    if (product.category === "METAL_ART" && customSize) {
+      sizeToPass = customSize
+      imageToPass = customImage
+    } else if ((product.category === "MALE" || product.category === "FEMALE") && selectedRingSize) {
+      sizeToPass = selectedRingSize
+    }
+
+    addItem(product, 1, sizeToPass, imageToPass)
+
+    toast({
+      title: "Added to cart",
+      description: "Product has been added to your cart.",
+    })
+  }
+
+  if (!product) return null
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid gap-8 md:grid-cols-2">
+        {/* Product Images */}
+        <div className="space-y-4">
+          <div className="relative aspect-square overflow-hidden rounded-lg">
+            <Image
+              src={product.images[0] || "/placeholder.jpg"}
+              alt={product.name}
+              fill
+              className="object-cover"
+              priority
+            />
+          </div>
+        </div>
+
+        {/* Product Details */}
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold">{product.name}</h1>
+            <p className="text-2xl font-semibold">₹{product.price.toFixed(2)}</p>
+          </div>
+
+          <p className="text-gray-600">{product.description}</p>
+
+          {/* Size Selection for Rings */}
+          {(product.category === "MALE" || product.category === "FEMALE") && (
+            <div className="space-y-2">
+              <Label htmlFor="ring-size">Ring Size</Label>
+              <Select value={selectedRingSize} onValueChange={setSelectedRingSize}>
+                <SelectTrigger id="ring-size">
+                  <SelectValue placeholder="Select ring size" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 13 }, (_, i) => i + 6).map((size) => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Custom Size and Image Upload for Metal Art */}
+          {product.category === "METAL_ART" && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="custom-size">Custom Size (in inches)</Label>
+                <Input
+                  id="custom-size"
+                  placeholder="e.g., 12x24"
+                  value={customSize}
+                  onChange={(e) => setCustomSize(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="custom-image">Upload Custom Image (optional)</Label>
+                <Input
+                  id="custom-image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                />
+                {customImage && (
+                  <div className="relative h-32 w-32">
+                    <Image
+                      src={customImage}
+                      alt="Custom design preview"
+                      fill
+                      className="rounded-lg object-cover"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-4">
+            <Button
+              onClick={handleAddToCart}
+              disabled={
+                (product.category === "METAL_ART" && !customSize) ||
+                ((product.category === "MALE" || product.category === "FEMALE") && !selectedRingSize)
+              }
+            >
+              Add to Cart
+            </Button>
+            <FavoriteButton productId={product.id} productName={product.name} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
