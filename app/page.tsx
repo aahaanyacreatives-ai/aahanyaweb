@@ -103,17 +103,19 @@ export default async function HomePage() {
           <div className="grid w-full grid-cols-1 items-center justify-center gap-6 lg:grid-cols-3">
             <Card>
               <CardHeader>
-                <CardTitle>Handcrafted Quality</CardTitle>
+                <CardTitle>Premium  Quality</CardTitle>
                 <CardDescription>Each piece is meticulously crafted by skilled artisans.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Image
-                  src="/placeholder.svg?height=100&width=100"
-                  width="100"
-                  height="100"
-                  alt="Handcrafted Quality"
-                  className="mx-auto"
-                />
+                <video
+      src="/5-star animation.mp4"
+     style={{ width: '200px', height: 'auto', maxWidth: '100%' }}
+      className="mx-auto"
+      autoPlay
+      loop
+      muted
+      playsInline
+    />
               </CardContent>
             </Card>
             <Card>
@@ -122,13 +124,15 @@ export default async function HomePage() {
                 <CardDescription>Discover exclusive designs that stand out from the crowd.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Image
-                  src="/placeholder.svg?height=100&width=100"
-                  width="100"
-                  height="100"
-                  alt="Unique Designs"
-                  className="mx-auto"
-                />
+                <video
+      src="/gemstone.mp4"
+      style={{ width: '200px', height: 'auto', maxWidth: '100%' }}
+      className="mx-auto"
+      autoPlay
+      loop
+      muted
+      playsInline
+    />
               </CardContent>
             </Card>
             <Card>
@@ -137,13 +141,15 @@ export default async function HomePage() {
                 <CardDescription>Your happiness is our priority. Enjoy seamless shopping.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Image
-                  src="/placeholder.svg?height=100&width=100"
-                  width="100"
-                  height="100"
-                  alt="Customer Satisfaction"
-                  className="mx-auto"
-                />
+                <video
+      src="review.mp4"
+      style={{ width: '200px', height: 'auto', maxWidth: '100%' }}
+      className="mx-auto"
+      autoPlay
+      loop
+      muted
+      playsInline
+    />
               </CardContent>
             </Card>
           </div>

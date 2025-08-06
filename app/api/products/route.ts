@@ -45,9 +45,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     console.log("🔍 DEBUG: Full request body:", body);
 
-    // ✅ FIXED: Destructure 'images' (array) not 'image' (singular)
-    const { name, description, price, images, category } = body;
-    console.log("🔍 DEBUG: Destructured:", { name, description, price, images, category });
+    // Add `type` here
+    const { name, description, price, images, category, type } = body;
+    console.log("🔍 DEBUG: Destructured:", { name, description, price, images, category, type });
 
     if (!name || !description || !price || !images?.length || !category) {
       return NextResponse.json(
@@ -56,13 +56,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ FIXED: Pass images array directly (don't convert)
     const productData = {
       name,
       description,
       price,
-      images, // ← Use the images array as-is
-      category
+      images,
+      category,
+      type, // <-- IMPORTANT!
     };
 
     console.log("🔍 DEBUG: Sending to addProduct:", productData);
@@ -71,12 +71,13 @@ export async function POST(req: Request) {
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error) {
     console.error("Error adding product:", error);
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: "Failed to add product",
-      details: error.message 
+     details: (error instanceof Error ? error.message : String(error)),
     }, { status: 500 });
   }
 }
+
 
 
 
@@ -134,7 +135,7 @@ export async function DELETE(req: NextRequest) {
         console.log(`Cloudinary delete result for ${publicId}:`, result);
       } catch (error) {
         console.error(`Failed to delete image ${publicId} from Cloudinary:`, error);
-        cloudinaryResults.push({ publicId, error: error.message });
+        cloudinaryResults.push({ publicId, error: error instanceof Error ? error.message : String(error), });
       }
     }
 

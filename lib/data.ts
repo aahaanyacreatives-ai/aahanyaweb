@@ -32,6 +32,7 @@ export interface ProductDTO {
   price: number;
   images: string[];                                      // ← ARRAY
   category: "MALE" | "FEMALE" | "METAL_ART" | "FEATURED";
+  type?: string; 
   inStock: boolean;
   quantity: number;
   createdAt: Date;
@@ -49,6 +50,7 @@ function toDTO(p: ProductDoc & { _id: Types.ObjectId }): ProductDTO {
     price:       p.price,
     images:      p.images,
     category:    p.category as any,
+    type:        p.type ?? undefined,
     inStock:     p.inStock,
     quantity:    p.quantity,
     createdAt:   p.createdAt,
@@ -83,6 +85,7 @@ export async function addProduct(data: {
   price: number;
   images: string[];                                     // ← ARRAY
   category: "MALE" | "FEMALE" | "METAL_ART" | "FEATURED";
+  type?: string;  
 }): Promise<ProductDTO> {
   await connectToDatabase();
   const created = await ProductModel.create(data);

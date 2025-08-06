@@ -5,11 +5,26 @@ const productSchema = new mongoose.Schema(
     name:        { type: String,  required: true },
     description: { type: String,  required: true },
     price:       { type: Number,  required: true },
-    images:      [{ type: String, required: true }],           // ← ARRAY
-    category:    {                                            // enum in caps
+    images:      [{ type: String, required: true }], // ← ARRAY
+    category:    {
       type: String,
       enum: ["MALE", "FEMALE", "METAL_ART", "FEATURED"],
       required: true,
+    },
+    type: {           // <<== yahan all "type" values
+      type: String,
+      required: false,   // optional
+      lowercase: true,
+      enum: [
+        // Female types
+        "rings",
+        "earrings",
+        "necklace",
+        "scrunchies",
+        "bracelet",
+        // Male types
+        "chains"   // <<-------- yahan daal diya!
+      ],
     },
     inStock:   { type: Boolean, default: true },
     quantity:  { type: Number,  default: 0 },
