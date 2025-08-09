@@ -44,8 +44,8 @@ const providers = [
     async authorize(credentials) {
       const ts = new Date().toISOString();
        /*  DEBUG —–––––––––––––––––––––––––––––––––– */
-  console.log(`[DEBUG ${ts}] AUTHORIZE input email:`, credentials.email);
-  console.log(`[DEBUG ${ts}] AUTHORIZE input password:`, credentials.password);
+  console.log(`[DEBUG ${ts}] AUTHORIZE input email:`, credentials?.email);
+  console.log(`[DEBUG ${ts}] AUTHORIZE input password:`, credentials?.password);
   /*  ––––––––––––––––––––––––––––––––––––––––– */
       const timestamp = new Date().toISOString();
       console.log(`[DEBUG ${timestamp}] Authorize called with credentials:`, credentials);
@@ -147,9 +147,10 @@ const authConfig: AuthOptions = {
       }
       return session;
     },
-    async redirect({ url, baseUrl, token }) {
-      const timestamp = new Date().toISOString();
-      console.log(`[DEBUG ${timestamp}] Redirect callback called - URL: ${url}, Base: ${baseUrl}`);
+    async redirect(params: { url: string, baseUrl: string, token?: any }) {
+  const { url, baseUrl, token } = params;
+  const timestamp = new Date().toISOString();
+  console.log(`[DEBUG ${timestamp}] Redirect callback called - URL: ${url}, Base: ${baseUrl}`);
 
       // Prevent infinite loop: If URL is already the base or a loop is detected, return it
       if (url === baseUrl || url === `${baseUrl}/`) {
