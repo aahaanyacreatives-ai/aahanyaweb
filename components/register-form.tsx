@@ -43,7 +43,7 @@ export function RegisterForm() {
     if (response.ok) {
       toast({
         title: "Registration Successful!",
-        description: "Your account has been created. Please log in.",
+        description: "Your account has been created.",
       })
       // After successful registration, automatically sign in the user
       await signIn("credentials", {

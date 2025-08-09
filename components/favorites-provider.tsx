@@ -1,93 +1,101 @@
 "use client";
-
 import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  type ReactNode,
+  createContext, useContext, useState, useEffect, type ReactNode,
+  Dispatch, SetStateAction
 } from "react";
-import type { Product } from "@/lib/types";
+import { useSession } from "next-auth/react";
 
-interface FavoritesContextType {
+export interface FavoritesContextType {
   favoriteProductIds: string[];
-  favoriteProducts: Product[];
   addFavorite: (productId: string) => void;
   removeFavorite: (productId: string) => void;
   isFavorite: (productId: string) => boolean;
+  setFavoriteProductIds: Dispatch<SetStateAction<string[]>>;
 }
 
-const FavoritesContext = createContext<FavoritesContextType | undefined>(
-  undefined
-);
+const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
+  const { status } = useSession();
 
-  // Load favorite IDs from localStorage on initial render
   useEffect(() => {
-    const storedFavorites = localStorage.getItem("aahaanya_favorites");
-    if (storedFavorites) {
-      setFavoriteProductIds(JSON.parse(storedFavorites));
+    if (status === "authenticated") {
+      fetch("/api/favorites")
+        .then(res => res.json())
+        .then(data => {
+          setFavoriteProductIds(
+            Array.isArray(data.favorites)
+              ? data.favorites.map(
+                  (fav: { product: { _id: string } }) => fav.product?._id ?? ""  // NOT "id", use "_id"
+                ).filter(Boolean)
+              : []
+          );
+        }).catch(() => setFavoriteProductIds([]));
+    } else {
+      // For guests/unauthenticated
+      const stored = localStorage.getItem("aahaanya_favorites");
+      setFavoriteProductIds(stored ? JSON.parse(stored) : []);
     }
-  }, []);
+  }, [status]);
 
-  // Fetch all products via the API route to resolve favorite product details
   useEffect(() => {
-    const fetchAllProducts = async () => {
-      setLoadingProducts(true);
-      try {
-        const res = await fetch("/api/products");
-        if (!res.ok) {
-          throw new Error(`Failed to fetch products: ${res.status}`);
-        }
-        const productsData: Product[] = await res.json();
-        setAllProducts(productsData);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-      } finally {
-        setLoadingProducts(false);
-      }
-    };
-    fetchAllProducts();
-  }, []);
+    if (status !== "authenticated") {
+      localStorage.setItem("aahaanya_favorites", JSON.stringify(favoriteProductIds));
+    }
+  }, [favoriteProductIds, status]);
 
-  // Save favorite IDs to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem("aahaanya_favorites", JSON.stringify(favoriteProductIds));
-  }, [favoriteProductIds]);
-
-  const addFavorite = (productId: string) => {
-    setFavoriteProductIds((prevIds) => {
-      if (!prevIds.includes(productId)) {
-        return [...prevIds, productId];
-      }
-      return prevIds;
-    });
+  const addFavorite = async (productId: string) => {
+    if (status === "authenticated") {
+      await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId }),
+      });
+      // Always re-sync
+      const res = await fetch("/api/favorites");
+      const data = await res.json();
+      setFavoriteProductIds(
+        Array.isArray(data.favorites)
+          ? data.favorites.map(
+              (fav: { product: { _id: string } }) => fav.product?._id ?? ""
+            ).filter(Boolean)
+          : []
+      );
+    } else {
+      setFavoriteProductIds(prev =>
+        prev.includes(productId) ? prev : [...prev, productId]
+      );
+    }
   };
 
-  const removeFavorite = (productId: string) => {
-    setFavoriteProductIds((prevIds) => prevIds.filter((id) => id !== productId));
+  const removeFavorite = async (productId: string) => {
+    if (status === "authenticated") {
+      await fetch(`/api/favorites?productId=${productId}`, { method: "DELETE" });
+      const res = await fetch("/api/favorites");
+      const data = await res.json();
+      setFavoriteProductIds(
+        Array.isArray(data.favorites)
+          ? data.favorites.map(
+              (fav: { product: { _id: string } }) => fav.product?._id ?? ""
+            ).filter(Boolean)
+          : []
+      );
+    } else {
+      setFavoriteProductIds(prev => prev.filter(id => id !== productId));
+    }
   };
 
-  const isFavorite = (productId: string) => {
-    return favoriteProductIds.includes(productId);
-  };
-
-  const favoriteProducts = allProducts.filter((product) =>
-    favoriteProductIds.includes(product.id)
-  );
+  const isFavorite = (productId: string) => favoriteProductIds.includes(productId);
 
   return (
     <FavoritesContext.Provider
       value={{
         favoriteProductIds,
-        favoriteProducts,
         addFavorite,
         removeFavorite,
         isFavorite,
+        setFavoriteProductIds,
       }}
     >
       {children}
@@ -95,10 +103,9 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   );
 }
 
+
 export function useFavorites() {
-  const context = useContext(FavoritesContext);
-  if (context === undefined) {
-    throw new Error("useFavorites must be used within a FavoritesProvider");
-  }
-  return context;
+  const ctx = useContext(FavoritesContext);
+  if (!ctx) throw new Error("useFavorites must be used within a FavoritesProvider");
+  return ctx;
 }

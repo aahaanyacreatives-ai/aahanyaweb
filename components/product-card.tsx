@@ -7,6 +7,8 @@ import type { Product } from "@/lib/types"
 import { useCart } from "@/components/cart-provider"
 import { toast } from "@/hooks/use-toast"
 import { FavoriteButton } from "@/components/favorite-button"
+import { useSession } from "next-auth/react"
+import { ToastLoginAction } from "@/components/ToastLoginAction"
 
 interface ProductCardProps {
   product: Product
@@ -14,8 +16,19 @@ interface ProductCardProps {
 
 export function ProductCard({ product }: ProductCardProps) {
   const { addItem } = useCart()
+  const { status } = useSession()
 
   const handleAddToCart = () => {
+    if (status !== "authenticated") {
+      toast({
+        title: "Login Required",
+        description: "Please login to add items to your cart.",
+        action: <ToastLoginAction />,
+        variant: "destructive",
+      })
+      return
+    }
+
     addItem(product, 1)
     toast({
       title: "Added to cart!",
@@ -46,9 +59,13 @@ export function ProductCard({ product }: ProductCardProps) {
             <span className="text-sm text-muted-foreground line-through">₹{oldPrice}</span>
             <span className="text-xl font-bold">₹{product.price.toFixed(2)}</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <FavoriteButton productId={product.id} productName={product.name} />
-            <Button onClick={handleAddToCart} size="default" className="transition-colors duration-200 ease-in-out">
+            <Button
+              onClick={handleAddToCart}
+              size="default"
+              className="transition-colors duration-200 ease-in-out"
+            >
               Add to Cart
             </Button>
           </div>

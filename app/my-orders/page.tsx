@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import Image from "next/image"
+import { toast } from "@/hooks/use-toast"
 
 export default function MyOrdersPage() {
   const { data: session, status } = useSession()
@@ -21,14 +22,23 @@ export default function MyOrdersPage() {
     if (status === "loading") return
 
     if (!session?.user?.id) {
-      router.push("/login") // Redirect to login if not authenticated
+      router.push("/login")
       return
     }
 
     const fetchOrders = async () => {
       setLoading(true)
-      const userOrders = await getOrdersByUserId(session.user.id)
-      setOrders(userOrders)
+      try {
+        const userOrders = await getOrdersByUserId(session.user.id)
+        setOrders(userOrders || [])
+      } catch (err: any) {
+        toast({
+          title: "Error loading orders",
+          description: err.message || "Could not fetch your orders. Please try again.",
+          variant: "destructive",
+        })
+        setOrders([])
+      }
       setLoading(false)
     }
 
@@ -43,9 +53,8 @@ export default function MyOrdersPage() {
     )
   }
 
-  if (!session?.user?.id) {
-    return null // Should be redirected by useEffect
-  }
+  // User not logged in: fallback (shouldn't show, router will push)
+  if (!session?.user?.id) return null
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-6 md:py-12">
@@ -73,7 +82,7 @@ export default function MyOrdersPage() {
                   </span>
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Order Date: {new Date(order.orderDate).toLocaleDateString()}
+                  Order Date: {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "-"}
                 </p>
               </CardHeader>
               <CardContent>

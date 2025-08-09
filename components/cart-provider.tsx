@@ -1,83 +1,201 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { CartItem, Product } from "@/lib/types"
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { useSession } from "next-auth/react";
+import type { CartItem, Product } from "@/lib/types";
 
 interface CartContextType {
-  cartItems: CartItem[]
-  addItem: (product: Product, quantity: number, customSize?: string, customImage?: string) => void // Updated signature
-  removeItem: (productId: string) => void
-  updateQuantity: (productId: string, quantity: number) => void
-  clearCart: () => void
+  cartItems: CartItem[];
+  addItem: (product: Product, quantity: number, customSize?: string, customImage?: string) => Promise<void>;
+  removeItem: (productId: string, customSize?: string) => Promise<void>;
+  updateQuantity: (productId: string, quantity: number, customSize?: string) => Promise<void>;
+  clearCart: () => Promise<void>;
+  setCartItems: React.Dispatch<React.SetStateAction<CartItem[]>>; // for rare edge cases
 }
 
-const CartContext = createContext<CartContextType | undefined>(undefined)
+const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [cartItems, setCartItems] = useState<CartItem[]>([])
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const { status } = useSession();
 
-  // Load cart from localStorage on initial render
+  // Sync cart from backend/localStorage on mount or login/logout
   useEffect(() => {
-    const storedCart = localStorage.getItem("aahaanya_cart")
-    if (storedCart) {
-      setCartItems(JSON.parse(storedCart))
+    if (status === "authenticated") {
+      // 🟢 Fetch from server
+      fetch("/api/cart")
+        .then((res) => res.json())
+        .then((data) => {
+          setCartItems(
+            Array.isArray(data.cart)
+              ? data.cart.map((it : any) => ({
+                  product: {
+                    ...it.product,
+                    id: it.product._id?.toString?.() ?? it.product.id, // for sanity
+                  },
+                  quantity: it.quantity,
+                  customSize: it.customSize,
+                  customImage: it.customImage,
+                }))
+              : []
+          );
+        })
+        .catch(() => setCartItems([]));
+    } else {
+      // 🟡 Guest: get from localStorage
+      const storedCart = localStorage.getItem("aahaanya_cart");
+      setCartItems(storedCart ? JSON.parse(storedCart) : []);
     }
-  }, [])
+  }, [status]);
 
-  // Save cart to localStorage whenever it changes
+  // Save to localStorage for guests only
   useEffect(() => {
-    localStorage.setItem("aahaanya_cart", JSON.stringify(cartItems))
-  }, [cartItems])
+    if (status !== "authenticated") {
+      localStorage.setItem("aahaanya_cart", JSON.stringify(cartItems));
+    }
+  }, [cartItems, status]);
 
-  const addItem = (product: Product, quantity: number, customSize?: string, customImage?: string) => {
-    setCartItems((prevItems) => {
-      // For customizable items, we treat each customization as a unique cart item
-      // To avoid merging different customizations of the same product
-      const existingItem = prevItems.find(
-        (item) => item.product.id === product.id && item.customSize === customSize && item.customImage === customImage,
-      )
+  // Core methods -- all now sync with backend if logged in
 
-      if (existingItem) {
-        return prevItems.map((item) =>
-          item.product.id === product.id && item.customSize === customSize && item.customImage === customImage
-            ? { ...item, quantity: item.quantity + quantity }
-            : item,
+  const addItem: CartContextType["addItem"] = async (product, quantity, customSize, customImage) => {
+    if (status === "authenticated") {
+      await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: product.id,
+          quantity,
+          customSize,
+          customImage,
+        }),
+      });
+      // Re-fetch cart from backend
+      const res = await fetch("/api/cart");
+      const data = await res.json();
+      setCartItems(
+        Array.isArray(data.cart)
+          ? data.cart.map((it : any) => ({
+              product: { ...it.product, id: it.product._id?.toString?.() ?? it.product.id },
+              quantity: it.quantity,
+              customSize: it.customSize,
+              customImage: it.customImage,
+            }))
+          : []
+      );
+    } else {
+      // Guest: just update local state
+      setCartItems((prev) => {
+        const existingItem = prev.find(
+          (item) =>
+            item.product.id === product.id &&
+            item.customSize === customSize &&
+            item.customImage === customImage
+        );
+        if (existingItem) {
+          return prev.map((item) =>
+            item.product.id === product.id &&
+            item.customSize === customSize &&
+            item.customImage === customImage
+              ? { ...item, quantity: item.quantity + quantity }
+              : item
+          );
+        } else {
+          return [...prev, { product, quantity, customSize, customImage }];
+        }
+      });
+    }
+  };
+
+  const removeItem: CartContextType["removeItem"] = async (productId, customSize) => {
+    if (status === "authenticated") {
+      const url = `/api/cart?productId=${productId}` + (customSize ? `&customSize=${encodeURIComponent(customSize)}` : "");
+      await fetch(url, { method: "DELETE" });
+      // Re-sync
+      const res = await fetch("/api/cart");
+      const data = await res.json();
+      setCartItems(
+        Array.isArray(data.cart)
+          ? data.cart.map((it : any) => ({
+              product: { ...it.product, id: it.product._id?.toString?.() ?? it.product.id },
+              quantity: it.quantity,
+              customSize: it.customSize,
+              customImage: it.customImage,
+            }))
+          : []
+      );
+    } else {
+      setCartItems((prev) =>
+        prev.filter(
+          (item) =>
+            !(item.product.id === productId && (!customSize || item.customSize === customSize))
         )
-      } else {
-        return [...prevItems, { product, quantity, customSize, customImage }]
-      }
-    })
-  }
+      );
+    }
+  };
 
-  const removeItem = (productId: string) => {
-    setCartItems((prevItems) => prevItems.filter((item) => item.product.id !== productId))
-  }
+  const updateQuantity: CartContextType["updateQuantity"] = async (productId, quantity, customSize) => {
+    if (status === "authenticated") {
+      await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId,
+          quantity,
+          customSize,
+        }),
+      });
+      // Re-sync
+      const res = await fetch("/api/cart");
+      const data = await res.json();
+      setCartItems(
+        Array.isArray(data.cart)
+          ? data.cart.map((it : any) => ({
+              product: { ...it.product, id: it.product._id?.toString?.() ?? it.product.id },
+              quantity: it.quantity,
+              customSize: it.customSize,
+              customImage: it.customImage,
+            }))
+          : []
+      );
+    } else {
+      setCartItems((prev) =>
+        prev.map((item) =>
+          item.product.id === productId && (!customSize || item.customSize === customSize)
+            ? { ...item, quantity: Math.max(1, quantity) }
+            : item
+        )
+      );
+    }
+  };
 
-  const updateQuantity = (productId: string, quantity: number) => {
-    setCartItems((prevItems) =>
-      prevItems.map((item) =>
-        item.product.id === productId
-          ? { ...item, quantity: Math.max(1, quantity) } // Ensure quantity is at least 1
-          : item,
-      ),
-    )
-  }
-
-  const clearCart = () => {
-    setCartItems([])
-  }
+  const clearCart: CartContextType["clearCart"] = async () => {
+    if (status === "authenticated") {
+      // Remove all items API is not implemented! You can create it if you want, OR just remove all locally:
+      setCartItems([]);
+      // But for truly clearing server, you'd need to make a DELETE-all endpoint in API!
+    } else {
+      setCartItems([]);
+    }
+  };
 
   return (
-    <CartContext.Provider value={{ cartItems, addItem, removeItem, updateQuantity, clearCart }}>
+    <CartContext.Provider
+      value={{
+        cartItems,
+        addItem,
+        removeItem,
+        updateQuantity,
+        clearCart,
+        setCartItems,
+      }}
+    >
       {children}
     </CartContext.Provider>
-  )
+  );
 }
 
 export function useCart() {
-  const context = useContext(CartContext)
-  if (context === undefined) {
-    throw new Error("useCart must be used within a CartProvider")
-  }
-  return context
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error("useCart must be used within a CartProvider");
+  return ctx;
 }

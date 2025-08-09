@@ -45,11 +45,10 @@ export default function CartPage() {
                     <TableCell className="hidden sm:table-cell">
                       <Image
                         src={
-                          item.customImage ||
-                          item.product.image ||
-                          "/placeholder.svg?height=64&width=64&query=jewelry%20cart%20item" ||
-                          "/placeholder.svg"
-                        }
+  item.customImage
+    || (item.product.images && item.product.images.length > 0 ? item.product.images[0] : undefined)
+    || "/placeholder.svg?height=64&width=64&query=jewelry%20cart%20item"
+}
                         width={64}
                         height={64}
                         alt={item.product.name}
@@ -74,10 +73,11 @@ export default function CartPage() {
                     </TableCell>
                     <TableCell className="text-right">₹{item.product.price.toFixed(2)}</TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => removeItem(item.product.id)}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Remove</span>
-                      </Button>
+                     <Button variant="ghost" size="icon" onClick={() => removeItem(item.product.id, item.customSize)}>
+  <Trash2 className="h-4 w-4" />
+  <span className="sr-only">Remove</span>
+</Button>
+
                     </TableCell>
                   </TableRow>
                 ))}

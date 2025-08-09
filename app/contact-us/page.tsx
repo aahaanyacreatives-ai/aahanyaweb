@@ -28,6 +28,7 @@ export default function ContactUsPage() {
             </div>
             <div className="flex items-start gap-3">
               <MapPin className="h-6 w-6 text-primary shrink-0" />
+              
               <p className="text-lg text-gray-700 dark:text-gray-300">
                 Aahaanya Creatives  
                 <br />

@@ -17,7 +17,7 @@ export function Footer() {
         </Link>
         {/* New Social Media Links */}
         <Link
-          href="https://www.facebook.com/aahaanyacreatives"
+          href="https://www.facebook.com/share/1Ayb23Moof/"
           target="_blank"
           rel="noopener noreferrer"
           className="text-gray-500 hover:text-primary transition-colors"

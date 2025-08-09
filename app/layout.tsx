@@ -5,8 +5,11 @@ import "./globals.css"
 import { Navbar } from "@/components/navbar"
 import { CartProvider } from "@/components/cart-provider"
 import { AuthProvider } from "@/components/auth-provider"
+import { Toaster } from "@/components/ui/toaster";
 import { FavoritesProvider } from "@/components/favorites-provider" // Import FavoritesProvider
 import { Footer } from "@/components/footer"
+
+import { SyncUserCartFavorites } from "@/components/sync-user-cart-favorites";
 
 // Configure Poppins font
 const poppins = Poppins({
@@ -21,22 +24,19 @@ export const metadata: Metadata = {
     generator: 'v0.dev'
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={`${poppins.className} flex flex-col min-h-screen`}>
         <AuthProvider>
           <CartProvider>
             <FavoritesProvider>
-              {" "}
-              {/* Wrap with FavoritesProvider */}
               <Navbar />
+              {/* CART/FAV USER AUTO SYNC */}
+              <SyncUserCartFavorites />
               <main className="flex-1">{children}</main>
               <Footer />
+              <Toaster />
             </FavoritesProvider>
           </CartProvider>
         </AuthProvider>

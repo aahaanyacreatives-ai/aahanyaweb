@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { FavoriteButton } from "@/components/favorite-button"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-
+import { useSession } from "next-auth/react"
+import { ToastLoginAction } from "@/components/ToastLoginAction"
 import type { Product } from "@/lib/types"
 
 interface ProductDetailClientProps {
@@ -19,10 +20,11 @@ interface ProductDetailClientProps {
 
 export default function ProductDetailClient({ initialProduct }: ProductDetailClientProps) {
   const [product] = useState(initialProduct)
-  const [customSize, setCustomSize] = useState("") // For metal art
-  const [customImage, setCustomImage] = useState<string | undefined>(undefined) // For metal art
-  const [selectedRingSize, setSelectedRingSize] = useState<string | undefined>(undefined) // For rings
+  const [customSize, setCustomSize] = useState("")
+  const [customImage, setCustomImage] = useState<string | undefined>(undefined)
+  const [selectedRingSize, setSelectedRingSize] = useState<string | undefined>(undefined)
   const { addItem } = useCart()
+  const { status } = useSession()
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -38,21 +40,29 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
   }
 
   const handleAddToCart = () => {
+    if (status !== "authenticated") {
+      toast({
+        title: "Login Required",
+        description: "Please login to add items to your cart.",
+        action: <ToastLoginAction />,
+        variant: "destructive",
+      })
+      return
+    }
+
     if (!product) return
 
     let sizeToPass: string | undefined = undefined
     let imageToPass: string | undefined = undefined
 
-    // Handle size based on product category
     if (product.category === "METAL_ART" && customSize) {
       sizeToPass = customSize
       imageToPass = customImage
-    } else if ((product.category === "MALE" || product.category === "FEMALE") && selectedRingSize) {
-      sizeToPass = selectedRingSize
+    } else if (product.category === "MALE" || product.category === "FEMALE") {
+      sizeToPass = selectedRingSize // optional
     }
 
     addItem(product, 1, sizeToPass, imageToPass)
-
     toast({
       title: "Added to cart",
       description: "Product has been added to your cart.",
@@ -86,24 +96,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
 
           <p className="text-gray-600">{product.description}</p>
 
-          {/* Size Selection for Rings */}
-          {(product.category === "MALE" || product.category === "FEMALE") && (
-            <div className="space-y-2">
-              <Label htmlFor="ring-size">Ring Size</Label>
-              <Select value={selectedRingSize} onValueChange={setSelectedRingSize}>
-                <SelectTrigger id="ring-size">
-                  <SelectValue placeholder="Select ring size" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 13 }, (_, i) => i + 6).map((size) => (
-                    <SelectItem key={size} value={size.toString()}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          
 
           {/* Custom Size and Image Upload for Metal Art */}
           {product.category === "METAL_ART" && (
@@ -118,7 +111,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="custom-image">Upload Custom Image (optional)</Label>
+                <Label htmlFor="custom-image">Upload Custom Image</Label>
                 <Input
                   id="custom-image"
                   type="file"
@@ -143,8 +136,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
             <Button
               onClick={handleAddToCart}
               disabled={
-                (product.category === "METAL_ART" && !customSize) ||
-                ((product.category === "MALE" || product.category === "FEMALE") && !selectedRingSize)
+                (product.category === "METAL_ART" && !customSize)
               }
             >
               Add to Cart
