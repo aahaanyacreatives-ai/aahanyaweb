@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import dbConnect from '@/lib/db';
+import { connectToDatabase } from '@/lib/db/mongodb';
 import { Product } from '@/models/product';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth-middleware';
@@ -7,7 +7,7 @@ import { withAuth } from '@/lib/auth-middleware';
 // Get a single product
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await dbConnect();
+    await connectToDatabase();
     const product = await Product.findById(params.id);
     
     if (!product) {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   return withAuth(req, async (req: NextRequest) => {
     try {
-      await dbConnect();
+      await connectToDatabase();
       const data = await req.json();
       
       const product = await Product.findByIdAndUpdate(
@@ -50,7 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   return withAuth(req, async (req: NextRequest) => {
     try {
-      await dbConnect();
+      await connectToDatabase();
       const product = await Product.findByIdAndDelete(params.id);
       
       if (!product) {
