@@ -1,18 +1,17 @@
-"use client"
-
-import type React from "react"
-import Image from "next/image"
-import { useCart } from "@/components/cart-provider"
-import { toast } from "@/hooks/use-toast"
-import { useState } from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { FavoriteButton } from "@/components/favorite-button"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { useSession } from "next-auth/react"
-import { ToastLoginAction } from "@/components/ToastLoginAction"
-import type { Product } from "@/lib/types"
+"use client";
+import type React from "react";
+import { useCart } from "@/components/cart-provider";
+import { toast } from "@/hooks/use-toast";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { FavoriteButton } from "@/components/favorite-button";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { useSession } from "next-auth/react";
+import { ToastLoginAction } from "@/components/ToastLoginAction";
+import type { Product } from "@/lib/types";
+import { ProductCarousel } from "@/components/product-carousel";
 
 interface ProductDetailClientProps {
   initialProduct: Product;
@@ -30,9 +29,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
     const file = event.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onloadend = () => {
-        setCustomImage(reader.result as string)
-      }
+      reader.onloadend = () => setCustomImage(reader.result as string)
       reader.readAsDataURL(file)
     } else {
       setCustomImage(undefined)
@@ -49,8 +46,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
       })
       return
     }
-
-    if (!product) return
+    if (!product) return;
 
     let sizeToPass: string | undefined = undefined
     let imageToPass: string | undefined = undefined
@@ -74,17 +70,9 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="grid gap-8 md:grid-cols-2">
-        {/* Product Images */}
+        {/* Product Images Carousel */}
         <div className="space-y-4">
-          <div className="relative aspect-square overflow-hidden rounded-lg">
-            <Image
-              src={product.images[0] || "/placeholder.jpg"}
-              alt={product.name}
-              fill
-              className="object-cover"
-              priority
-            />
-          </div>
+          <ProductCarousel images={product.images} alt={product.name} />
         </div>
 
         {/* Product Details */}
@@ -95,8 +83,6 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
           </div>
 
           <p className="text-gray-600">{product.description}</p>
-
-          
 
           {/* Custom Size and Image Upload for Metal Art */}
           {product.category === "METAL_ART" && (
@@ -120,11 +106,10 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
                 />
                 {customImage && (
                   <div className="relative h-32 w-32">
-                    <Image
+                    <img
                       src={customImage}
                       alt="Custom design preview"
-                      fill
-                      className="rounded-lg object-cover"
+                      className="w-full h-full object-cover rounded-lg"
                     />
                   </div>
                 )}

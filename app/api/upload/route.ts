@@ -10,7 +10,7 @@ cloudinary.config({
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData()
+    const formData = await  req.formData()
     const file = formData.get("file") as File
 
     if (!file) {

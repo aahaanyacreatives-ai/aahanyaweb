@@ -18,18 +18,15 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
     name: "",
     description: "",
     price: "",
-    category: "female", // default to "female"
+    category: "female", // default
     images: [] as string[],
     type: "",
   });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Product type arrays for dropdowns
   const femaleTypes = ["rings", "earrings", "necklace", "scrunchies", "bracelet"];
   const maleTypes = ["chains", "rings", "bracelet"];
-
-  // Category mapping (client → DB)
   const catMap = {
     female: "FEMALE",
     male: "MALE",
@@ -37,35 +34,53 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
     featured: "FEATURED",
   };
 
-  async function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // MULTI upload handler
+  async function uploadImages(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    // Max 3 only
+    if (form.images.length + files.length > 3) {
+      toast({ title: "Max 3 images allowed", variant: "destructive" });
+      return;
+    }
     setUploading(true);
 
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await res.json();
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
 
+      if (!res.ok) {
+        toast({ title: "Upload failed", description: data.error, variant: "destructive" });
+      } else {
+        // Add uploaded image URL to form.images (prev)
+        setForm(prev => ({ ...prev, images: [...prev.images, data.url] }));
+        toast({ title: "Image uploaded" });
+      }
+    }
     setUploading(false);
-    if (!res.ok) return toast({ title: "Upload failed", description: data.error, variant: "destructive" });
+    // reset input value so you can re-upload same file if you removed it
+    e.target.value = "";
+  }
 
-    setForm(f => ({ ...f, images: [data.url] }));
-    toast({ title: "Image uploaded" });
+  // Remove image from form.images
+  function removeImage(idx: number) {
+    setForm(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== idx),
+    }));
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.images.length) {
-      return toast({ title: "Image required", variant: "destructive" });
+      return toast({ title: "At least one image required", variant: "destructive" });
     }
-
-    // If female, type required
-    if (form.category === "female" && !form.type) {
-      return toast({ title: "Type required", description: "Please select product type.", variant: "destructive" });
+    if (form.images.length > 3) {
+      return toast({ title: "Max 3 images allowed", variant: "destructive" });
     }
-    // If male, type required
-    if (form.category === "male" && !form.type) {
+    if ((form.category === "female" || form.category === "male") && !form.type) {
       return toast({ title: "Type required", description: "Please select product type.", variant: "destructive" });
     }
     setSaving(true);
@@ -77,10 +92,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         ...form,
         price: Number(form.price),
         category: catMap[form.category as keyof typeof catMap],
-        type:
-          form.category === "female" || form.category === "male"
-            ? form.type
-            : undefined, // Only send type for female/male
+        type: (form.category === "female" || form.category === "male") ? form.type : undefined,
       }),
     });
 
@@ -91,7 +103,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         name: "",
         description: "",
         price: "",
-        category: "female", // reset to female by default
+        category: "female",
         images: [],
         type: "",
       });
@@ -102,9 +114,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
     }
   }
 
-  // Decide what types to show
-  const showTypeSelector =
-    form.category === "female" || form.category === "male";
+  const showTypeSelector = form.category === "female" || form.category === "male";
   const currentTypeOptions =
     form.category === "female"
       ? femaleTypes
@@ -137,11 +147,33 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         required
       />
 
-      <Label>Image</Label>
-      <Input type="file" accept="image/*" onChange={uploadImage} required />
-      {form.images[0] && (
-        <img src={form.images[0]} alt="preview" className="w-24 h-24 object-cover mt-2" />
-      )}
+      <Label>Images (Max 3)</Label>
+      <Input
+        type="file"
+        accept="image/*"
+        multiple
+        disabled={form.images.length >= 3 || uploading}
+        onChange={uploadImages}
+        // not required: user can submit without uploading new files after uploading once
+      />
+      <div className="flex gap-3 mt-2">
+        {form.images.map((url, idx) => (
+          <div key={idx} className="relative">
+            <img
+              src={url}
+              alt={`preview-${idx + 1}`}
+              className="w-24 h-24 object-cover rounded border"
+            />
+            <button
+              type="button"
+              aria-label="Remove image"
+              onClick={() => removeImage(idx)}
+              className="absolute top-0 right-0 bg-black text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+              style={{ lineHeight: 1 }}
+            >×</button>
+          </div>
+        ))}
+      </div>
 
       <Label>Category</Label>
       <Select
@@ -149,7 +181,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         onValueChange={v => setForm(prev => ({
           ...prev,
           category: v,
-          type: "", // reset type when category switches
+          type: "",
         }))}
       >
         <SelectTrigger>
@@ -163,7 +195,6 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         </SelectContent>
       </Select>
 
-      {/* Product Type field – conditional for female or male */}
       {showTypeSelector && (
         <>
           <Label>Product Type</Label>
