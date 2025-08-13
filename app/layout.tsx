@@ -5,11 +5,11 @@ import "./globals.css"
 import { Navbar } from "@/components/navbar"
 import { CartProvider } from "@/components/cart-provider"
 import { AuthProvider } from "@/components/auth-provider"
-import { Toaster } from "@/components/ui/toaster";
-import { FavoritesProvider } from "@/components/favorites-provider" // Import FavoritesProvider
+import { Toaster } from "@/components/ui/toaster"
+import { FavoritesProvider } from "@/components/favorites-provider"
 import { Footer } from "@/components/footer"
-
-import { SyncUserCartFavorites } from "@/components/sync-user-cart-favorites";
+import { ErrorSuppressor } from "@/components/error-suppressor"
+import { SyncUserCartFavorites } from "@/components/sync-user-cart-favorites"
 
 // Configure Poppins font
 const poppins = Poppins({
@@ -21,13 +21,14 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Aahaanya Creatives - Premium Jewellery",
   description: "Exquisite handcrafted jewellery for every occasion.",
-    generator: 'v0.dev'
+  generator: 'v0.dev'
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={`${poppins.className} flex flex-col min-h-screen`}>
+        <ErrorSuppressor />
         <AuthProvider>
           <CartProvider>
             <FavoritesProvider>

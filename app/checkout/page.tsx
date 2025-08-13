@@ -252,7 +252,9 @@ export default function CheckoutPage() {
                 const orderItems = cartItems.map((item) => ({
                   productId: item.product.id,
                   name: item.product.name,
-                  image: item.product.image,
+                  image: (item.product.images && item.product.images.length > 0)
+            ? item.product.images[0]
+            : "", 
                   price: item.product.price,
                   quantity: item.quantity,
                   customSize: item.customSize,
@@ -303,7 +305,7 @@ export default function CheckoutPage() {
                   })
                 }
 
-                router.push("/my-orders")
+                router.push(`/checkout/success?orderId=${encodeURIComponent(order.id || "")}`)
               } catch (orderError: any) {
                 console.error("Order creation error:", orderError)
                 toast({

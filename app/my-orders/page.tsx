@@ -3,7 +3,6 @@
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { getOrdersByUserId } from "@/lib/data"
 import type { Order } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -29,17 +28,30 @@ export default function MyOrdersPage() {
     const fetchOrders = async () => {
       setLoading(true)
       try {
-        const userOrders = await getOrdersByUserId(session.user.id)
-        setOrders(userOrders || [])
+        const response = await fetch('/api/orders', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch orders')
+        }
+
+        const ordersData = await response.json()
+        setOrders(ordersData || [])
       } catch (err: any) {
+        console.error('Error fetching orders:', err)
         toast({
           title: "Error loading orders",
           description: err.message || "Could not fetch your orders. Please try again.",
           variant: "destructive",
         })
         setOrders([])
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
 
     fetchOrders()
@@ -72,7 +84,7 @@ export default function MyOrdersPage() {
             <Card key={order.id}>
               <CardHeader>
                 <CardTitle className="flex justify-between items-center">
-                  Order ID: {order.id}
+                  <span>Order ID: {order.id}</span>
                   <span
                     className={`text-sm font-medium ${
                       order.status === "completed" ? "text-green-600" : "text-orange-500"
@@ -122,7 +134,9 @@ export default function MyOrdersPage() {
                     </TableBody>
                   </Table>
                 </div>
-                <div className="flex justify-end mt-4 text-lg font-bold">Total: ₹{order.totalAmount.toFixed(2)}</div>
+                <div className="flex justify-end mt-4 text-lg font-bold">
+                  Total: ₹{order.totalAmount.toFixed(2)}
+                </div>
               </CardContent>
             </Card>
           ))}

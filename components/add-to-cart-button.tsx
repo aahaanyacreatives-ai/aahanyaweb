@@ -37,7 +37,19 @@ export function AddToCartButton({ product }: { product: Product }) {
   };
 
   return (
-    <Button onClick={handleAddToCart} size="lg">
+    <Button 
+      onClick={handleAddToCart}
+      className="
+        w-full sm:w-auto 
+        px-3 sm:px-6 
+        py-2 sm:py-3 
+        text-sm sm:text-base 
+        h-9 sm:h-11
+        font-medium
+        min-w-0
+        flex-shrink-0
+      "
+    >
       Add to Cart
     </Button>
   );
