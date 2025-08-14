@@ -20,21 +20,9 @@ interface ProductDetailClientProps {
 export default function ProductDetailClient({ initialProduct }: ProductDetailClientProps) {
   const [product] = useState(initialProduct)
   const [customSize, setCustomSize] = useState("")
-  const [customImage, setCustomImage] = useState<string | undefined>(undefined)
   const [selectedRingSize, setSelectedRingSize] = useState<string | undefined>(undefined)
   const { addItem } = useCart()
   const { status } = useSession()
-
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => setCustomImage(reader.result as string)
-      reader.readAsDataURL(file)
-    } else {
-      setCustomImage(undefined)
-    }
-  }
 
   const handleAddToCart = () => {
     if (status !== "authenticated") {
@@ -49,23 +37,33 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
     if (!product) return;
 
     let sizeToPass: string | undefined = undefined
-    let imageToPass: string | undefined = undefined
 
-    if (product.category === "METAL_ART" && customSize) {
+    if (product.category === "METAL_ART" && product.type === "metal art" && customSize) {
       sizeToPass = customSize
-      imageToPass = customImage
     } else if (product.category === "MALE" || product.category === "FEMALE") {
       sizeToPass = selectedRingSize // optional
     }
 
-    addItem(product, 1, sizeToPass, imageToPass)
+    addItem(product, 1, sizeToPass, undefined) // No image passing from client side
     toast({
       title: "Added to cart",
       description: "Product has been added to your cart.",
     })
   }
 
+  // Handle WhatsApp redirect for Eternal Steel Art
+  const handleWhatsAppRedirect = () => {
+    const phoneNumber = "919930536205"; // Indian number format
+    const message = `Hi! I'm interested in ${product.name} - ${product.description}. Price: ₹${product.price}`;
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+  }
+
   if (!product) return null
+
+  // Check if this is Eternal Steel Art
+  const isEternalSteelArt = product.category === "METAL_ART" && product.type === "eternal steel art";
+  const isRegularMetalArt = product.category === "METAL_ART" && product.type === "metal art";
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -84,8 +82,8 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
 
           <p className="text-gray-600">{product.description}</p>
 
-          {/* Custom Size and Image Upload for Metal Art */}
-          {product.category === "METAL_ART" && (
+          {/* Only Custom Size for Regular Metal Art - NO IMAGE UPLOAD */}
+          {isRegularMetalArt && (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="custom-size">Custom Size (in inches)</Label>
@@ -96,36 +94,49 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
                   onChange={(e) => setCustomSize(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="custom-image">Upload Custom Image</Label>
-                <Input
-                  id="custom-image"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                />
-                {customImage && (
-                  <div className="relative h-32 w-32">
-                    <img
-                      src={customImage}
-                      alt="Custom design preview"
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                  </div>
-                )}
-              </div>
+            </div>
+          )}
+
+          {/* Ring Size Selection for Male/Female Products */}
+          {(product.category === "MALE" || product.category === "FEMALE") && product.type === "rings" && (
+            <div className="space-y-2">
+              <Label>Ring Size (Optional)</Label>
+              <Select value={selectedRingSize} onValueChange={setSelectedRingSize}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select ring size" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 13 }, (_, i) => i + 6).map(size => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           <div className="flex gap-4">
-            <Button
-              onClick={handleAddToCart}
-              disabled={
-                (product.category === "METAL_ART" && !customSize)
-              }
-            >
-              Add to Cart
-            </Button>
+            {/* Conditional Button Rendering */}
+            {isEternalSteelArt ? (
+              // Click to Buy button for Eternal Steel Art
+              <Button
+                onClick={handleWhatsAppRedirect}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                Click to Buy
+              </Button>
+            ) : (
+              // Regular Add to Cart button for all other products
+              <Button
+                onClick={handleAddToCart}
+                disabled={
+                  (isRegularMetalArt && !customSize)
+                }
+              >
+                Add to Cart
+              </Button>
+            )}
             <FavoriteButton productId={product.id} productName={product.name} />
           </div>
         </div>

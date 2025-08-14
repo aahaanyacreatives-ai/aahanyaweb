@@ -27,6 +27,8 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
 
   const femaleTypes = ["rings", "earrings", "necklace", "scrunchies", "bracelet"];
   const maleTypes = ["chains", "rings", "bracelet"];
+  const metalArtTypes = ["eternal steel art", "metal art"]; // NEW
+  
   const catMap = {
     female: "FEMALE",
     male: "MALE",
@@ -34,10 +36,11 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
     featured: "FEATURED",
   };
 
-  // MULTI upload handler
+  // MULTI upload handler - ALWAYS ENABLED FOR ADMIN
   async function uploadImages(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
+    
     // Max 3 only
     if (form.images.length + files.length > 3) {
       toast({ title: "Max 3 images allowed", variant: "destructive" });
@@ -80,7 +83,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
     if (form.images.length > 3) {
       return toast({ title: "Max 3 images allowed", variant: "destructive" });
     }
-    if ((form.category === "female" || form.category === "male") && !form.type) {
+    if ((form.category === "female" || form.category === "male" || form.category === "metal-art") && !form.type) {
       return toast({ title: "Type required", description: "Please select product type.", variant: "destructive" });
     }
     setSaving(true);
@@ -92,7 +95,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         ...form,
         price: Number(form.price),
         category: catMap[form.category as keyof typeof catMap],
-        type: (form.category === "female" || form.category === "male") ? form.type : undefined,
+        type: (form.category === "female" || form.category === "male" || form.category === "metal-art") ? form.type : undefined,
       }),
     });
 
@@ -114,12 +117,14 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
     }
   }
 
-  const showTypeSelector = form.category === "female" || form.category === "male";
+  const showTypeSelector = form.category === "female" || form.category === "male" || form.category === "metal-art";
   const currentTypeOptions =
     form.category === "female"
       ? femaleTypes
       : form.category === "male"
       ? maleTypes
+      : form.category === "metal-art"
+      ? metalArtTypes
       : [];
 
   return (
@@ -146,34 +151,6 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         onChange={e => setForm({ ...form, price: e.target.value })}
         required
       />
-
-      <Label>Images (Max 3)</Label>
-      <Input
-        type="file"
-        accept="image/*"
-        multiple
-        disabled={form.images.length >= 3 || uploading}
-        onChange={uploadImages}
-        // not required: user can submit without uploading new files after uploading once
-      />
-      <div className="flex gap-3 mt-2">
-        {form.images.map((url, idx) => (
-          <div key={idx} className="relative">
-            <img
-              src={url}
-              alt={`preview-${idx + 1}`}
-              className="w-24 h-24 object-cover rounded border"
-            />
-            <button
-              type="button"
-              aria-label="Remove image"
-              onClick={() => removeImage(idx)}
-              className="absolute top-0 right-0 bg-black text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
-              style={{ lineHeight: 1 }}
-            >×</button>
-          </div>
-        ))}
-      </div>
 
       <Label>Category</Label>
       <Select
@@ -216,6 +193,35 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
           </Select>
         </>
       )}
+
+      {/* Image Upload - ALWAYS ENABLED FOR ADMIN */}
+      <Label>Images (Max 3)</Label>
+      <Input
+        type="file"
+        accept="image/*"
+        multiple
+        disabled={form.images.length >= 3 || uploading}
+        onChange={uploadImages}
+        required
+      />
+      <div className="flex gap-3 mt-2">
+        {form.images.map((url, idx) => (
+          <div key={idx} className="relative">
+            <img
+              src={url}
+              alt={`preview-${idx + 1}`}
+              className="w-24 h-24 object-cover rounded border"
+            />
+            <button
+              type="button"
+              aria-label="Remove image"
+              onClick={() => removeImage(idx)}
+              className="absolute top-0 right-0 bg-black text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+              style={{ lineHeight: 1 }}
+            >×</button>
+          </div>
+        ))}
+      </div>
 
       <Button disabled={uploading || saving}>
         {saving ? "Saving…" : "Add product"}

@@ -11,7 +11,7 @@ const productSchema = new mongoose.Schema(
       enum: ["MALE", "FEMALE", "METAL_ART", "FEATURED"],
       required: true,
     },
-    type: {           // <<== yahan all "type" values
+    type: {           
       type: String,
       required: false,   // optional
       lowercase: true,
@@ -23,7 +23,10 @@ const productSchema = new mongoose.Schema(
         "scrunchies",
         "bracelet",
         // Male types
-        "chains"   // <<-------- yahan daal diya!
+        "chains",
+        // Metal Art types - NEW
+        "eternal steel art",
+        "metal art"
       ],
     },
     inStock:   { type: Boolean, default: true },
