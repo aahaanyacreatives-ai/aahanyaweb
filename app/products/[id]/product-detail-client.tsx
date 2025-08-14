@@ -53,7 +53,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
 
   // Handle WhatsApp redirect for Eternal Steel Art
   const handleWhatsAppRedirect = () => {
-    const phoneNumber = "919930536205"; // Indian number format
+    const phoneNumber = "919930536206"; // Indian number format
     const message = `Hi! I'm interested in ${product.name} - ${product.description}. Price: ₹${product.price}`;
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
