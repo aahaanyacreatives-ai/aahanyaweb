@@ -1,38 +1,35 @@
-/**
- * Legacy /api/auth/* endpoints (NextAuth v4) for
- * SessionProvider / signIn / signOut compatibility.
- *
- * We reuse the same configuration that lives in `auth.config.ts`
- * so there is a single source of truth.
- */
+// app/api/auth/[...nextauth]/route.ts - FIXED VERSION
 import NextAuth from "next-auth";
-import authConfig from "@/auth.config"; // Ensure this path is correct (e.g., adjust if it's in lib/)
-
-// Separate imports: type-only for NextRequest, regular for NextResponse (used as value)
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import authConfig from "@/auth.config";
 
 // DEBUG: Log when this route file is loaded
 console.log("[DEBUG] NextAuth route.ts loaded at:", new Date().toISOString());
+console.log("[DEBUG] Environment variables check:");
+console.log("- GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? "✓ Present" : "✗ Missing");
+console.log("- GOOGLE_CLIENT_SECRET:", process.env.GOOGLE_CLIENT_SECRET ? "✓ Present" : "✗ Missing");
+console.log("- NEXTAUTH_SECRET:", process.env.NEXTAUTH_SECRET ? "✓ Present" : "✗ Missing");
+console.log("- NEXTAUTH_URL:", process.env.NEXTAUTH_URL || "Not set (will use default)");
 
-// DEBUG: Log config keys and import path
-console.log("[DEBUG] Imported authConfig from path: '@/auth.config'");
-console.log("[DEBUG] Imported authConfig keys:", JSON.stringify(Object.keys(authConfig)));
+// Create the NextAuth handler
+const handler = NextAuth(authConfig);
 
-// Handler with per-request logging and basic error handling
-const handler = async (req: NextRequest, ...args: any[]): Promise<NextResponse> => {
+// Add debug logging wrapper
+const debugHandler = async (req: Request, context: any) => {
   const timestamp = new Date().toISOString();
-  console.log(`[DEBUG ${timestamp}] NextAuth handler called - method: ${req.method}, url: ${req.url}`);
-
+  const url = new URL(req.url);
+  const method = req.method;
+  
+  console.log(`[DEBUG ${timestamp}] NextAuth request - Method: ${method}, Path: ${url.pathname}, Search: ${url.search}`);
+  
   try {
-    // Call the NextAuth handler
-    // @ts-ignore (if TS complains about types)
-    return await NextAuth(authConfig)(req, ...args);
+    const response = await handler(req, context);
+    console.log(`[DEBUG ${timestamp}] NextAuth response - Status: ${response.status}`);
+    return response;
   } catch (error) {
-    console.error(`[DEBUG ${timestamp}] Error in NextAuth handler:`, error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error(`[DEBUG ${timestamp}] NextAuth handler error:`, error);
+    throw error;
   }
 };
 
-// Export for GET and POST
-export { handler as GET, handler as POST };
+// Export the handler for both GET and POST
+export { debugHandler as GET, debugHandler as POST };
