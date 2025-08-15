@@ -81,7 +81,7 @@ export function Navbar() {
     <>
       {/* Top Announcement Bar */}
       <div className="w-full bg-primary text-primary-foreground text-center text-xs py-1.5">
-        FREE JEWELLERY ORGANIZER WORTH ₹400 ON ORDERS ABOVE RS. 1500
+        shop above 1000/- and get free shipping 
       </div>
 
       <header className="sticky top-0 z-50 w-full border-b bg-primary text-primary-foreground">

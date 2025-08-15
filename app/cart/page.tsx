@@ -12,7 +12,7 @@ export default function CartPage() {
   const { cartItems, removeItem, updateQuantity, clearCart } = useCart()
 
   const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
-  const shipping = 10.0 // Example fixed shipping cost
+  const shipping = 50.0 // Example fixed shipping cost
   const total = subtotal + shipping
 
   return (

@@ -202,7 +202,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
         multiple
         disabled={form.images.length >= 3 || uploading}
         onChange={uploadImages}
-        required
+        // Removed 'required' to allow submission after uploading and clearing the input
       />
       <div className="flex gap-3 mt-2">
         {form.images.map((url, idx) => (
