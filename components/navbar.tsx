@@ -165,7 +165,7 @@ export function Navbar() {
 
             {/* Brand Name: Visible on both mobile and desktop */}
             <span className="text-smll md:text-2xl font-bold tracking-tight text-primary-foreground">
-              Aahaanya Creatives
+              Aahaanya  Creatives
             </span>
 
             {/* Search form: Hidden on mobile, visible on desktop */}
