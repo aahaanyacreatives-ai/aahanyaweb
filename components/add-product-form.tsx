@@ -1,3 +1,4 @@
+// C:\Users\Asus\OneDrive\Desktop\Aahanya\components\add-product-form.tsx
 "use client";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const femaleTypes = ["rings", "earrings", "necklace", "scrunchies", "bracelet"];
+  const femaleTypes = ["rings", "earrings", "necklace", "scrunchies", "bracelet", "mini purse"];
   const maleTypes = ["chains", "rings", "bracelet"];
   const metalArtTypes = ["eternal steel art", "metal art"]; // NEW
   

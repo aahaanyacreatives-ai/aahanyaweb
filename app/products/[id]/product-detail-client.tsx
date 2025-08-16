@@ -1,3 +1,4 @@
+// C:\Users\Asus\OneDrive\Desktop\Aahanya\app\products\[id]\product-detail-client.tsx
 "use client";
 import type React from "react";
 import { useCart } from "@/components/cart-provider";

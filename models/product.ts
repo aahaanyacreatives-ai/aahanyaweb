@@ -1,3 +1,4 @@
+// C:\Users\Asus\OneDrive\Desktop\Aahanya\models\product.ts
 import mongoose, { Model } from "mongoose";
 
 const productSchema = new mongoose.Schema(
@@ -22,6 +23,7 @@ const productSchema = new mongoose.Schema(
         "necklace",
         "scrunchies",
         "bracelet",
+        "mini purse",
         // Male types
         "chains",
         // Metal Art types - NEW

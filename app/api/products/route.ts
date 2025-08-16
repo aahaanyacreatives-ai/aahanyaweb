@@ -1,3 +1,4 @@
+// C:\Users\Asus\OneDrive\Desktop\Aahanya\app\api\products\route.ts
 // app/api/products/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -8,7 +9,6 @@ import {
 } from "@/lib/data";
 
 import { v2 as cloudinary } from "cloudinary";
-
 
 // Configure Cloudinary
 cloudinary.config({
@@ -77,9 +77,6 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 }
-
-
-
 
 export async function DELETE(req: NextRequest) {
   try {

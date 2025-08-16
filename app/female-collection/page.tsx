@@ -1,3 +1,4 @@
+// C:\Users\Asus\OneDrive\Desktop\Aahanya\app\female-collection\page.tsx
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -26,6 +27,7 @@ const FEMALE_TYPES = [
   "necklace",
   "scrunchies",
   "bracelet",
+  "mini purse",
 ];
 
 export default function FemaleCollectionPage() {
