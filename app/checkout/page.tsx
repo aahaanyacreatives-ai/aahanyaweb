@@ -74,7 +74,7 @@ export default function CheckoutPage() {
   const [isPending, startTransition] = useTransition()  // Added for server action handling
 
   const subtotal = useMemo(() => cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0), [cartItems])
-  const shipping = 10.0
+  const shipping = 50.0
 
   // Calculate total with discount
   const total = useMemo(() => {

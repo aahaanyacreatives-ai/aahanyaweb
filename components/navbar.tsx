@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import type React from "react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet"
-import { Menu, ShoppingCart, User, LogOut, Search, Heart, Package } from "lucide-react"
-import { useCart } from "@/components/cart-provider"
-import { useFavorites } from "@/components/favorites-provider"
-import { useSession, signOut } from "next-auth/react"
-import { Input } from "@/components/ui/input"
-import { usePathname, useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
+import type React from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
+import { Menu, ShoppingCart, User, LogOut, Search, Heart, Package } from "lucide-react";
+import { useCart } from "@/components/cart-provider";
+import { useFavorites } from "@/components/favorites-provider";
+import { useSession, signOut } from "next-auth/react";
+import { Input } from "@/components/ui/input";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 
 // Create a client-only component for the cart count
 const CartCount = ({ count }: { count: number }) => {
@@ -48,45 +48,45 @@ const FavoritesCount = ({ count }: { count: number }) => {
 
 export function Navbar() {
   const pathname = usePathname();
-  const onAdmin = pathname.startsWith('/admin');
+  const onAdmin = pathname.startsWith("/admin");
 
-  // ‼️  Do not render the public navbar inside the admin area
+  // ‼️ Do not render the public navbar inside the admin area
   if (onAdmin) return null;
-  const { cartItems } = useCart()
-  const { favoriteProductIds } = useFavorites()
-  const { data: session, status } = useSession()
-  const totalItemsInCart = cartItems.reduce((sum, item) => sum + item.quantity, 0)
-  const [searchQuery, setSearchQuery] = useState("")
-  const isAdmin = (session?.user as any)?.role === "admin"
-  const router = useRouter()
-  const [mounted, setMounted] = useState(false)
+  const { cartItems } = useCart();
+  const { favoriteProductIds } = useFavorites();
+  const { data: session, status } = useSession();
+  const totalItemsInCart = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const isAdmin = (session?.user as any)?.role === "admin";
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
+    setMounted(true);
+  }, []);
 
   const handleSignOut = async () => {
-    await signOut({ callbackUrl: "/" })
-  }
+    await signOut({ callbackUrl: "/" });
+  };
 
   const handleSearch = (event: React.FormEvent) => {
-    event.preventDefault()
+    event.preventDefault();
     if (searchQuery.trim()) {
-      router.push(`/search?query=${encodeURIComponent(searchQuery.trim())}`)
-      setSearchQuery("")
+      router.push(`/search?query=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchQuery("");
     }
-  }
+  };
 
   return (
     <>
       {/* Top Announcement Bar */}
       <div className="w-full bg-primary text-primary-foreground text-center text-xs py-1.5">
-        shop above 1000/- and get free shipping 
+         
       </div>
 
       <header className="sticky top-0 z-50 w-full border-b bg-primary text-primary-foreground">
         <div className="container flex h-16 items-center justify-between px-4 md:px-6">
-          {/* Left Section: Search Icon and Brand Name (Mobile & Desktop) */}
+          {/* Left Section: Menu (Mobile), Brand Name, and Search (Desktop) */}
           <div className="flex items-center gap-4">
             <Sheet>
               <SheetTrigger asChild>
@@ -163,6 +163,12 @@ export function Navbar() {
               </SheetContent>
             </Sheet>
 
+            {/* Brand Name: Visible on both mobile and desktop */}
+            <span className="text-smll md:text-2xl font-bold tracking-tight text-primary-foreground">
+              Aahaanya Creatives
+            </span>
+
+            {/* Search form: Hidden on mobile, visible on desktop */}
             <form onSubmit={handleSearch} className="relative hidden md:block">
               <Input
                 type="search"
@@ -176,12 +182,9 @@ export function Navbar() {
                 <span className="sr-only">Search</span>
               </Button>
             </form>
-            <span className="hidden md:block text-2xl font-bold tracking-tight text-primary-foreground">
-              Aahaanya Creatives
-            </span>
           </div>
 
-          {/* Center Section: Main Navigation Links */}
+          {/* Center Section: Main Navigation Links (Desktop only) */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <Link href="/" className="hover:underline underline-offset-4" prefetch={false}>
               Home
@@ -240,5 +243,5 @@ export function Navbar() {
         </div>
       </header>
     </>
-  )
+  );
 }

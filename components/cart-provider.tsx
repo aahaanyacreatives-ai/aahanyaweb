@@ -19,6 +19,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const { status } = useSession();
 
+  // Helper function to normalize cart data safely
+  const normalizeCartItems = (data: any): CartItem[] => {
+    if (!Array.isArray(data.cart)) return [];
+
+    return data.cart
+      .filter((it: any) => it.product != null) // Skip items with null/undefined product
+      .map((it: any) => ({
+        product: {
+          ...it.product,
+          id: it.product?._id?.toString?.() ?? it.product?.id ?? '', // Safe access with fallback
+        },
+        quantity: it.quantity,
+        customSize: it.customSize,
+        customImage: it.customImage,
+      }));
+  };
+
   // Sync cart from backend/localStorage on mount or login/logout
   useEffect(() => {
     if (status === "authenticated") {
@@ -26,21 +43,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       fetch("/api/cart")
         .then((res) => res.json())
         .then((data) => {
-          setCartItems(
-            Array.isArray(data.cart)
-              ? data.cart.map((it : any) => ({
-                  product: {
-                    ...it.product,
-                    id: it.product._id?.toString?.() ?? it.product.id, // for sanity
-                  },
-                  quantity: it.quantity,
-                  customSize: it.customSize,
-                  customImage: it.customImage,
-                }))
-              : []
-          );
+          setCartItems(normalizeCartItems(data));
         })
-        .catch(() => setCartItems([]));
+        .catch((error) => {
+          console.error("Failed to fetch cart:", error);
+          setCartItems([]);
+        });
     } else {
       // 🟡 Guest: get from localStorage
       const storedCart = localStorage.getItem("aahaanya_cart");
@@ -72,16 +80,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Re-fetch cart from backend
       const res = await fetch("/api/cart");
       const data = await res.json();
-      setCartItems(
-        Array.isArray(data.cart)
-          ? data.cart.map((it : any) => ({
-              product: { ...it.product, id: it.product._id?.toString?.() ?? it.product.id },
-              quantity: it.quantity,
-              customSize: it.customSize,
-              customImage: it.customImage,
-            }))
-          : []
-      );
+      setCartItems(normalizeCartItems(data));
     } else {
       // Guest: just update local state
       setCartItems((prev) => {
@@ -113,16 +112,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Re-sync
       const res = await fetch("/api/cart");
       const data = await res.json();
-      setCartItems(
-        Array.isArray(data.cart)
-          ? data.cart.map((it : any) => ({
-              product: { ...it.product, id: it.product._id?.toString?.() ?? it.product.id },
-              quantity: it.quantity,
-              customSize: it.customSize,
-              customImage: it.customImage,
-            }))
-          : []
-      );
+      setCartItems(normalizeCartItems(data));
     } else {
       setCartItems((prev) =>
         prev.filter(
@@ -147,16 +137,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Re-sync
       const res = await fetch("/api/cart");
       const data = await res.json();
-      setCartItems(
-        Array.isArray(data.cart)
-          ? data.cart.map((it : any) => ({
-              product: { ...it.product, id: it.product._id?.toString?.() ?? it.product.id },
-              quantity: it.quantity,
-              customSize: it.customSize,
-              customImage: it.customImage,
-            }))
-          : []
-      );
+      setCartItems(normalizeCartItems(data));
     } else {
       setCartItems((prev) =>
         prev.map((item) =>
@@ -170,9 +151,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart: CartContextType["clearCart"] = async () => {
     if (status === "authenticated") {
-      // Remove all items API is not implemented! You can create it if you want, OR just remove all locally:
+      // Assuming a DELETE endpoint exists to clear the entire cart; implement if not
+      await fetch("/api/cart", { method: "DELETE" });
       setCartItems([]);
-      // But for truly clearing server, you'd need to make a DELETE-all endpoint in API!
     } else {
       setCartItems([]);
     }
