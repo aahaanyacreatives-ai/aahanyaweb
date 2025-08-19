@@ -1,13 +1,10 @@
-import Image from "next/image"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProductCard } from "@/components/product-card"
 import { getProducts } from "@/lib/data"
 import type { Product } from "@/lib/types"
 
-// Assuming the attached product image is saved in your public folder as bracelet-hero.jpg
-// (Rename your attached IMG-20250806-WA0030.jpg to this and place in /public folder)
-import productHeroImg from "@/public/bracelet-hero.jpg"
+import HeroCarousel from "@/components/HeroCarousel" // Import here
 
 export default async function HomePage() {
   const products: Product[] = await getProducts()
@@ -24,19 +21,12 @@ export default async function HomePage() {
       >
         <div className="container px-4 md:px-6">
           <div className="grid gap-10 md:gap-14 lg:gap-24 lg:grid-cols-2 items-center">
-            {/* IMAGE ON TOP FOR MOBILE, RIGHT FOR DESKTOP */}
-            <div className="block md:hidden mx-auto mb-6 max-w-[300px]">
-              <Image
-                src={productHeroImg}
-                alt="Handcrafted Jewellery Bracelet"
-                width={400}
-                height={400}
-                className="rounded-xl shadow-lg object-cover"
-                priority
-              />
+            {/* Mobile carousel */}
+            <div className="md:hidden mx-auto mb-6 w-full max-w-[400px]">
+              <HeroCarousel />
             </div>
 
-            {/* LEFT SIDE: TEXT CONTENT */}
+            {/* Text */}
             <div className="flex flex-col items-start justify-center space-y-5">
               <h1 className="text-4xl sm:text-5xl xl:text-7xl font-extrabold tracking-tight text-[#181838] leading-tight">
                 ESSENTIALS <br className="hidden md:block" />
@@ -65,21 +55,15 @@ export default async function HomePage() {
               </div>
             </div>
 
-            {/* RIGHT SIDE: IMAGE, HIDDEN ON MOBILE */}
-            <div className="hidden md:flex justify-center items-center">
-              <Image
-                src={productHeroImg}
-                alt="Handcrafted Jewellery Bracelet"
-                width={450}
-                height={450}
-                className="rounded-2xl shadow-lg object-cover"
-                priority
-              />
+            {/* Desktop carousel */}
+            <div className="hidden md:flex justify-center items-center w-full">
+              <HeroCarousel />
             </div>
           </div>
         </div>
       </section>
 
+      {/* Rest of your sections remain the same */}
       <section className="w-full py-12 md:py-24 lg:py-32">
         <div className="container px-4 md:px-6">
           <div className="flex flex-col items-center justify-center space-y-4 text-center">
@@ -126,7 +110,7 @@ export default async function HomePage() {
               <CardContent>
                 <video
                   src="/5-star animation.mp4"
-                  style={{ width: '200px', height: 'auto', maxWidth: '100%' }}
+                  style={{ width: "200px", height: "auto", maxWidth: "100%" }}
                   className="mx-auto"
                   autoPlay
                   loop
@@ -143,7 +127,7 @@ export default async function HomePage() {
               <CardContent>
                 <video
                   src="/gemstone.mp4"
-                  style={{ width: '200px', height: 'auto', maxWidth: '100%' }}
+                  style={{ width: "200px", height: "auto", maxWidth: "100%" }}
                   className="mx-auto"
                   autoPlay
                   loop
@@ -159,8 +143,8 @@ export default async function HomePage() {
               </CardHeader>
               <CardContent>
                 <video
-                  src="review.mp4"
-                  style={{ width: '200px', height: 'auto', maxWidth: '100%' }}
+                  src="/review.mp4"
+                  style={{ width: "200px", height: "auto", maxWidth: "100%" }}
                   className="mx-auto"
                   autoPlay
                   loop
