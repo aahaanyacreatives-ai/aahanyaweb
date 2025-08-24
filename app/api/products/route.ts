@@ -1,21 +1,12 @@
-// app/api/products/route.ts - COMPLETE FIXED VERSION
+// app/api/products/route.ts - Updated for Google Cloud Storage
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDB } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
 import { handleFirebaseError } from '@/lib/firebase-utils';
+import { bucket, extractFilenameFromGCSUrl } from '@/lib/gcs-utils';
 import { z } from 'zod';
-import * as cloudinary from 'cloudinary';
 
-const cloudinaryV2 = cloudinary.v2;
-
-// Configure Cloudinary
-cloudinaryV2.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-  api_key: process.env.CLOUDINARY_API_KEY!,
-  api_secret: process.env.CLOUDINARY_API_SECRET!,
-});
-
-// ✅ FIXED: Updated schema to match your form data
+// ✅ Updated schema to match your form data
 const ProductSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().min(1, "Description is required"),
@@ -87,7 +78,8 @@ export async function POST(req: NextRequest) {
         ...validationResult.data,
         id: productRef.id,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        storageProvider: 'gcs' // Track that this uses Google Cloud Storage
       };
 
       await productRef.set(productData);
@@ -142,7 +134,11 @@ export async function PUT(req: NextRequest) {
       const batch = adminDB.batch();
       validatedUpdates.forEach(({ id, data }) => {
         const ref = PRODUCTS.doc(id);
-        batch.update(ref, { ...data, updatedAt: new Date() });
+        batch.update(ref, { 
+          ...data, 
+          updatedAt: new Date(),
+          storageProvider: 'gcs' // Mark as using GCS
+        });
       });
       await batch.commit();
 
@@ -158,7 +154,7 @@ export async function PUT(req: NextRequest) {
   });
 }
 
-// DELETE: Delete product and its images from Cloudinary (admin only)
+// DELETE: Delete product and its images from Google Cloud Storage (admin only)
 export async function DELETE(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
@@ -182,37 +178,44 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "No product data found" }, { status: 404 });
       }
 
-      // Extract Cloudinary public IDs from image URLs
-      const imagePublicIds = data.images?.map((url: string) => {
-        try {
-          const parts = url.split('/');
-          const uploadIdx = parts.indexOf('upload');
-          if (uploadIdx === -1 || uploadIdx + 2 >= parts.length) return null;
-          
-          const publicIdWithExt = parts.slice(uploadIdx + 2).join('/');
-          const publicId = publicIdWithExt.replace(/\.[^/.]+$/, "");
-          return publicId;
-        } catch (err) {
-          console.error('Error extracting public ID from URL:', url, err);
-          return null;
+      // Extract filenames from GCS URLs
+      const imageFilenames: string[] = [];
+      if (data.images && Array.isArray(data.images)) {
+        for (const url of data.images) {
+          const filename = extractFilenameFromGCSUrl(url);
+          if (filename) {
+            imageFilenames.push(filename);
+          }
         }
-      }).filter(Boolean) as string[];
+      }
 
       // Delete from Firestore first
       await PRODUCTS.doc(id).delete();
+      console.log(`✅ Product ${id} deleted from Firestore`);
 
-      // Delete images from Cloudinary
-      const cloudinaryResults = [];
-      if (imagePublicIds.length > 0) {
-        for (const publicId of imagePublicIds) {
+      // Delete images from Google Cloud Storage
+      const gcsResults = [];
+      if (imageFilenames.length > 0) {
+        console.log(`🗑️ Deleting ${imageFilenames.length} images from GCS...`);
+        
+        for (const filename of imageFilenames) {
           try {
-            const result = await cloudinaryV2.uploader.destroy(publicId);
-            cloudinaryResults.push({ publicId, result: result.result });
-            console.log(`Cloudinary deletion result for ${publicId}:`, result.result);
+            const file = bucket.file(filename);
+            
+            // Check if file exists before attempting to delete
+            const [exists] = await file.exists();
+            if (exists) {
+              await file.delete();
+              gcsResults.push({ filename, result: 'deleted' });
+              console.log(`✅ GCS file deleted: ${filename}`);
+            } else {
+              gcsResults.push({ filename, result: 'not_found' });
+              console.log(`⚠️ GCS file not found: ${filename}`);
+            }
           } catch (err) {
-            console.error(`Error deleting image ${publicId} from Cloudinary:`, err);
-            cloudinaryResults.push({ 
-              publicId, 
+            console.error(`❌ Error deleting GCS file ${filename}:`, err);
+            gcsResults.push({ 
+              filename, 
               error: err instanceof Error ? err.message : 'Unknown error'
             });
           }
@@ -222,7 +225,8 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ 
         success: true,
         message: "Product deleted successfully",
-        cloudinaryResults
+        deletedImages: gcsResults.length,
+        gcsResults
       });
 
     } catch (error) {

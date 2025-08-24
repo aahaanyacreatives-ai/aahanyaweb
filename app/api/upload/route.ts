@@ -1,16 +1,8 @@
-// app/api/upload/route.ts - COMPLETE FIXED VERSION
+// app/api/upload/route.ts - Updated for Google Cloud Storage
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth-middleware';
-import * as cloudinary from 'cloudinary';
-
-const cloudinaryV2 = cloudinary.v2;
-
-// Configure Cloudinary
-cloudinaryV2.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-  api_key: process.env.CLOUDINARY_API_KEY!,
-  api_secret: process.env.CLOUDINARY_API_SECRET!,
-});
+import { bucket, getPublicUrl } from '@/lib/gcs-utils';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
@@ -45,43 +37,110 @@ export async function POST(req: NextRequest) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
 
-      // Upload to Cloudinary
-      const uploadResponse = await new Promise<any>((resolve, reject) => {
-        cloudinaryV2.uploader.upload_stream(
-          {
-            resource_type: "auto",
-            folder: "aahanya-products",
-            transformation: [
-              { width: 800, height: 800, crop: "limit" },
-              { quality: "auto:good" },
-              { format: "auto" }
-            ]
-          },
-          (error: any, result: any) => {
-            if (error) {
-              console.error("Cloudinary upload error:", error);
-              reject(error);
-            } else {
-              resolve(result);
-            }
-          }
-        ).end(buffer);
-      });
+      // Generate unique filename with proper extension
+      const fileExtension = file.name.split('.').pop() || 'jpg';
+      const fileName = `aahanya-products/${uuidv4()}.${fileExtension}`;
 
-      console.log(`✅ Image uploaded successfully: ${uploadResponse.secure_url}`);
+      // Create a reference to the file in GCS
+      const gcsFile = bucket.file(fileName);
+      
+      // Upload to Google Cloud Storage
+      const uploadResponse = await new Promise<any>((resolve, reject) => {
+        const stream = gcsFile.createWriteStream({
+          metadata: {
+            contentType: file.type,
+            cacheControl: 'public, max-age=31536000', // 1 year cache
+          },
+          public: true, // Make file publicly accessible
+          validation: 'md5',
+          resumable: false, // For smaller files, disable resumable upload
+        });
+
+        stream.on('error', (error) => {
+          console.error('GCS upload error:', error);
+          reject(error);
+        });
+
+        stream.on('finish', async () => {
+          try {
+            // Make the file public (redundant but ensures access)
+            await gcsFile.makePublic();
+            
+            // Get file metadata
+            const [metadata] = await gcsFile.getMetadata();
+            
+            const publicUrl = getPublicUrl(fileName);
+            console.log(`✅ Image uploaded successfully: ${publicUrl}`);
+            
+            resolve({
+              url: publicUrl,
+              fileName: fileName,
+              size: file.size,
+              contentType: file.type,
+              etag: metadata.etag,
+              timeCreated: metadata.timeCreated
+            });
+          } catch (error) {
+            console.error('Error making file public:', error);
+            reject(error);
+          }
+        });
+
+        // Write the buffer to the stream
+        stream.end(buffer);
+      });
 
       return NextResponse.json({
         success: true,
-        url: uploadResponse.secure_url,
-        public_id: uploadResponse.public_id,
-        width: uploadResponse.width,
-        height: uploadResponse.height
+        url: uploadResponse.url,
+        fileName: uploadResponse.fileName,
+        size: uploadResponse.size,
+        contentType: uploadResponse.contentType,
+        etag: uploadResponse.etag,
+        timeCreated: uploadResponse.timeCreated
       });
 
     } catch (error) {
-      console.error("[DEBUG] Upload error:", error);
+      console.error("[DEBUG] GCS Upload error:", error);
       return NextResponse.json({
         error: "Upload failed",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
+    }
+  });
+}
+
+// Optional: Add a DELETE endpoint for individual file deletion
+export async function DELETE(req: NextRequest) {
+  return withAuth(req, async (req: NextRequest, token: any) => {
+    try {
+      if (token.role !== 'admin') {
+        return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+      }
+
+      const { searchParams } = new URL(req.url);
+      const fileName = searchParams.get('fileName');
+      
+      if (!fileName) {
+        return NextResponse.json({ error: "File name is required" }, { status: 400 });
+      }
+
+      // Delete file from GCS
+      const file = bucket.file(fileName);
+      await file.delete();
+
+      console.log(`✅ File deleted successfully: ${fileName}`);
+
+      return NextResponse.json({
+        success: true,
+        message: "File deleted successfully",
+        fileName: fileName
+      });
+
+    } catch (error) {
+      console.error("[DEBUG] GCS Delete error:", error);
+      return NextResponse.json({
+        error: "Delete failed",
         details: error instanceof Error ? error.message : "Unknown error"
       }, { status: 500 });
     }
