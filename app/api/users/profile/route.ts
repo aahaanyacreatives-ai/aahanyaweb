@@ -1,57 +1,55 @@
 import { NextRequest } from 'next/server';
-import { connectToDatabase } from '@/lib/db/mongodb';
-import { User } from '@/models/user';
+import { adminDB } from '@/lib/firebaseAdmin';       // Firestore (Admin SDK)
+import { getAuth } from 'firebase-admin/auth';       // Admin Auth
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth-middleware';
-import bcryptjs from 'bcryptjs';
 
-// Get user profile
+const USERS = adminDB.collection('users');
+const auth  = getAuth();
+
+/* ───────────── GET : current user profile ───────────── */
 export async function GET(req: NextRequest) {
-  return withAuth(req, async (req: NextRequest, token: any) => {
+  return withAuth(req, async (_req: NextRequest, token: any) => {
     try {
-      await connectToDatabase();
-      const user = await User.findById(token.sub).select('-password');
-      
-      if (!user) {
-        return errorResponse('User not found', 404);
-      }
-      
-      return successResponse(user);
-    } catch (error) {
-      console.error('User GET error:', error);
+      const snap = await USERS.doc(token.sub).get();
+      if (!snap.exists) return errorResponse('User not found', 404);
+
+      const data = snap.data();
+      return successResponse({ id: snap.id, ...data });   // password field never stored here
+    } catch (err) {
+      console.error('User GET error:', err);
       return errorResponse('Failed to fetch user profile');
     }
   });
 }
 
-// Update user profile
+/* ───────────── PUT : update profile ───────────── */
 export async function PUT(req: NextRequest) {
-  return withAuth(req, async (req: NextRequest, token: any) => {
+  return withAuth(req, async (_req: NextRequest, token: any) => {
     try {
-      await connectToDatabase();
       const { password, ...data } = await req.json();
-      
-      const updateData: any = { ...data, updatedAt: new Date() };
-      
-      // If password is being updated, hash it
+
+      /* 1️⃣  Firestore profile update */
+      const updateData: Record<string, unknown> = { ...data, updatedAt: new Date() };
+      if (Object.keys(updateData).length > 1) {           // something other than updatedAt
+        await USERS.doc(token.sub).update(updateData);
+      }
+
+      /* 2️⃣  Password change (optional) – via Firebase Auth */
       if (password) {
-        const salt = await bcryptjs.genSalt(10);
-        updateData.password = await bcryptjs.hash(password, salt);
+        await auth.updateUser(token.sub, { password });
       }
-      
-      const user = await User.findByIdAndUpdate(
-        token.sub,
-        updateData,
-        { new: true }
-      ).select('-password');
-      
-      if (!user) {
-        return errorResponse('User not found', 404);
-      }
-      
-      return successResponse(user, 'Profile updated successfully');
-    } catch (error) {
-      console.error('User update error:', error);
+
+      /* 3️⃣  Return fresh profile */
+      const snap = await USERS.doc(token.sub).get();
+      if (!snap.exists) return errorResponse('User not found', 404);
+
+      return successResponse(
+        { id: snap.id, ...snap.data() },
+        'Profile updated successfully',
+      );
+    } catch (err) {
+      console.error('User update error:', err);
       return errorResponse('Failed to update profile');
     }
   });

@@ -1,94 +1,151 @@
-import NextAuth from "next-auth"
-import Google from "next-auth/providers/google"
-import Credentials from "next-auth/providers/credentials"
-import { loginUser, registerUser, getUserByEmail } from "@/lib/user-data"  // Updated import from previous fix
-import type { User } from "@/lib/types"
+import NextAuth from "next-auth";
+import { DefaultSession } from "next-auth"; // ✅ Add this import
+import GoogleProvider from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { compare, hash } from "bcryptjs";
+import { db } from "./lib/firebase";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { RequestInternal } from "next-auth";
+import { Awaitable } from "next-auth";
 
-// Build the providers array safely — Google only if env vars are set.
-const providers = []
+// ✅ Add type declarations in this file to avoid conflicts
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      role: "admin" | "user";
+    } & DefaultSession["user"];
+  }
+
+  interface User {
+    role: "admin" | "user";
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+    role: "admin" | "user";
+  }
+}
+
+// ✅ Helper function for type safety
+function isValidRole(role: any): role is "admin" | "user" {
+  return role === "admin" || role === "user";
+}
+
+// Define User type
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+  role?: "admin" | "user"; // ✅ Fixed: Use union type instead of string
+}
+
+// Build providers array dynamically
+const providers = [];
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   providers.push(
-    Google({
+    GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-  )
+    })
+  );
 }
 
-/**
- * Fallback provider so the app still works when Google env vars
- * are not configured in the v0 preview.
- * Uses the same in-memory login you already have.
- */
+// Credentials provider
 providers.push(
-  Credentials({
+  CredentialsProvider({
     name: "Email / Password",
     credentials: {
       email: { label: "Email", type: "text" },
       password: { label: "Password", type: "password" },
     },
-    async authorize(credentials, req) {  // Added 'req' parameter to match type signature
-      if (!credentials?.email || !credentials?.password) return null
+    async authorize(credentials: Record<"email" | "password", string> | undefined, req: Pick<RequestInternal, "body" | "query" | "headers" | "method">) {
+      if (!credentials?.email || !credentials?.password) return null;
 
-      // Try to log in with existing credentials
-      const user = await loginUser(credentials.email, credentials.password)
-      if (user) {
-        return {
-          id: user.id,
-          name: user.name ?? user.email,
-          email: user.email,
-          role: user.role ?? 'user',  // Added default 'user' to ensure role is always string (fixes undefined issue)
-        }
-      }
-      return null
+      // Look up user by email in Firestore
+      const userDocRef = doc(db, "users", credentials.email.toLowerCase().trim());
+      const userSnap = await getDoc(userDocRef);
+
+      if (!userSnap.exists()) return null;
+
+      const userData = userSnap.data();
+
+      // Compare password
+      const isValid = await compare(credentials.password, userData.password);
+      if (!isValid) return null;
+
+      // ✅ Ensure proper role typing
+      const userRole = isValidRole(userData.role) ? userData.role : "user";
+
+      return {
+        id: userSnap.id,
+        name: userData.name ?? userData.email,
+        email: userData.email,
+        role: userRole, // ✅ Now properly typed
+      };
     },
-  }),
-)
+  })
+);
 
-export const { auth, signIn, signOut } = NextAuth({
+export const auth = NextAuth({
   providers,
   pages: { signIn: "/login" },
   session: { strategy: "jwt" },
-  secret: process.env.AUTH_SECRET || "dev-secret", // dev fallback
+  secret: process.env.AUTH_SECRET || "dev-secret", // fallback in dev
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       if (account?.provider === "google") {
-        // Check if user already exists
-        let existingUser = await getUserByEmail(user.email!)
-        if (!existingUser) {
-          // If not, register them with a default role
-          existingUser = await registerUser({
-            email: user.email!,
-            name: user.name || user.email!,
-            role: "user", // Default role for new Google users
-          })
+        if (!user.email) {
+          console.error("Google user has no email, rejecting sign-in.");
+          return false;
         }
-        // Attach our internal user ID and role to the NextAuth user object
-        if (existingUser) {
-          user.id = existingUser.id
-          user.role = existingUser.role ?? 'user'  // Ensure role is string here too
+
+        const email = user.email.toLowerCase().trim();
+        const userDocRef = doc(db, "users", email);
+        const existingSnap = await getDoc(userDocRef);
+
+        if (!existingSnap.exists()) {
+          // Register new Google user
+          const hashedPassword = await hash(Math.random().toString(36).slice(-8), 10);
+          await setDoc(userDocRef, {
+            email,
+            name: user.name ?? email,
+            password: hashedPassword, // temp (don't use in prod)
+            role: "user",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        // Attach ID + role
+        const updatedData = (await getDoc(userDocRef)).data();
+        if (updatedData) {
+          user.id = userDocRef.id;
+          // ✅ Ensure proper role typing with validation
+          user.role = isValidRole(updatedData.role) ? updatedData.role : "user";
         }
       }
-      return true
+      return true;
     },
     async jwt({ token, user }) {
-      // Persist the user ID and role to the JWT token
+      // Persist id + role into token
       if (user) {
-        token.id = user.id
-        token.role = (user as User).role // Cast user to our User type to access role
+        token.id = (user as User).id;
+        // ✅ Ensure role is properly typed
+        token.role = isValidRole((user as User).role) ? (user as User).role! : "user";
       }
-      return token
+      return token;
     },
     async session({ session, token }) {
-      // Send properties to the client, like user ID and role
-      if (token.id) {
-        session.user.id = token.id as string
+      if (session.user) {
+        session.user.id = (token.id as string) ?? "";
+        // ✅ FIXED: Direct assignment instead of string casting
+        session.user.role = token.role; // This was the line causing the original error
       }
-      if (token.role) {
-        session.user.role = token.role as string
-      }
-      return session
+      return session;
     },
   },
-})
+});

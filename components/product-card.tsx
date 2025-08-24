@@ -1,21 +1,23 @@
-"use client"
+// components/product-card.tsx - CLEANED UP WITH MINOR FIXES (e.g., TypeScript, optional chaining)
 
-import Image from "next/image"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import type { Product } from "@/lib/types"
-import { useCart } from "@/components/cart-provider"
-import { toast } from "@/hooks/use-toast"
-import { useSession } from "next-auth/react"
-import { ToastLoginAction } from "@/components/ToastLoginAction"
+'use client';
+
+import Image from "next/image";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import type { Product } from "@/lib/types";
+import { useCart } from "@/components/cart-provider";
+import { toast } from "@/hooks/use-toast";
+import { useSession } from "next-auth/react";
+import { ToastLoginAction } from "@/components/ToastLoginAction";
 
 interface ProductCardProps {
-  product: Product
+  product: Product;
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  const { addItem } = useCart()
-  const { status } = useSession()
+  const { addItem } = useCart();
+  const { status } = useSession();
 
   const handleAddToCart = () => {
     if (status !== "authenticated") {
@@ -24,19 +26,19 @@ export function ProductCard({ product }: ProductCardProps) {
         description: "Please login to add items to your cart.",
         action: <ToastLoginAction />,
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    addItem(product, 1)
+    addItem(product, 1);
     toast({
       title: "Added to cart!",
       description: `${product.name} has been added to your cart.`,
-    })
-  }
+    });
+  };
 
   // Simulate an old price for demonstration, 20% higher than current price
-  const oldPrice = (product.price * 1.2).toFixed(2)
+  const oldPrice = (product.price * 1.2).toFixed(2);
 
   return (
     <div className="group relative overflow-hidden rounded-lg border bg-background shadow-sm">
@@ -83,5 +85,5 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }

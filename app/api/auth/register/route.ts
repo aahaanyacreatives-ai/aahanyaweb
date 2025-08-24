@@ -1,43 +1,112 @@
-import { NextResponse } from "next/server"
-import { registerUser, getUserByEmail } from "@/lib/user-data"
- // Using in-memory data for demo
+// app/api/auth/register/route.ts - COMPLETE FIXED VERSION
+import { NextResponse } from "next/server";
+import { adminDB } from "@/lib/firebaseAdmin";
+import { getAuth } from "firebase-admin/auth";
+import { hash } from "bcryptjs";
 
 export async function POST(req: Request) {
-
-   
   try {
-    const { name, email, password } = await req.json()
-     /*  DEBUG —–––––––––––––––––––––––––––––––––– */
-  console.log("[DEBUG REGISTER-API] raw email:", email);
-  console.log("[DEBUG REGISTER-API] raw password:", password);
+    console.log('[DEBUG] Registration API called');
+    
+    const { name, email, password } = await req.json();
 
+    // Validate input
     if (!name || !email || !password) {
-      return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Name, email, and password are required" },
+        { status: 400 }
+      );
     }
 
-    // Check if user already exists
-    const existingUser = await getUserByEmail(email)
-    if (existingUser) {
-      return NextResponse.json({ error: "User with this email already exists" }, { status: 409 })
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
     }
 
-    // In a real app, you would hash the password before saving
-   const newUser = await registerUser({
-  name,
-  email,
-  password,
-  role: "user",  // add this required field
-});
+    console.log('[DEBUG] Registration attempt for:', email);
 
-    if (newUser) {
-      // Do not return password in response
-      const { password: _, ...userWithoutPassword } = newUser
-      return NextResponse.json(userWithoutPassword, { status: 201 })
-    } else {
-      return NextResponse.json({ error: "Failed to register user" }, { status: 500 })
+    const auth = getAuth();
+    
+    // Check if user already exists in Firestore
+    const usersCollection = adminDB.collection("users");
+    const existingUserSnap = await usersCollection.where("email", "==", email).get();
+    
+    if (!existingUserSnap.empty) {
+      return NextResponse.json(
+        { error: "User with this email already exists" },
+        { status: 409 }
+      );
     }
+
+    try {
+      // Create user in Firebase Auth
+      const userRecord = await auth.createUser({
+        email: email,
+        password: password,
+        displayName: name,
+        emailVerified: false,
+      });
+
+      console.log('[DEBUG] Firebase Auth user created:', userRecord.uid);
+
+      // Hash password for credentials provider compatibility
+      const hashedPassword = await hash(password, 10);
+
+      // Create user document in Firestore
+      await usersCollection.doc(userRecord.uid).set({
+        name,
+        email,
+        role: "user",
+        hashedPassword, // For credentials provider
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        provider: 'email'
+      });
+
+      console.log('[DEBUG] User profile created in Firestore');
+
+      return NextResponse.json(
+        { 
+          success: true,
+          message: "User created successfully",
+          user: { id: userRecord.uid, name, email, role: "user" }
+        },
+        { status: 201 }
+      );
+
+    } catch (authError: any) {
+      console.error('[DEBUG] Firebase Auth error:', authError);
+      
+      if (authError.code === 'auth/email-already-exists') {
+        return NextResponse.json(
+          { error: "User with this email already exists" },
+          { status: 409 }
+        );
+      } else if (authError.code === 'auth/invalid-email') {
+        return NextResponse.json(
+          { error: "Invalid email format" },
+          { status: 400 }
+        );
+      } else if (authError.code === 'auth/weak-password') {
+        return NextResponse.json(
+          { error: "Password is too weak" },
+          { status: 400 }
+        );
+      }
+      
+      throw authError;
+    }
+
   } catch (error) {
-    console.error("Registration error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("[DEBUG] Registration error:", error);
+    return NextResponse.json(
+      { 
+        error: "Internal server error",
+        details: error instanceof Error ? error.message : "Unknown error"
+      },
+      { status: 500 }
+    );
   }
 }

@@ -1,4 +1,4 @@
-// C:\Users\Asus\OneDrive\Desktop\Aahanya\components\add-product-form.tsx
+// components/add-product-form.tsx - COMPLETE UPDATED VERSION
 "use client";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
+type Category = "female" | "male" | "metal-art" | "featured";
+
+type FormData = {
+  name: string;
+  description: string;
+  price: string;
+  category: Category;
+  images: string[];
+  type: string;
+};
+
 export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormData>({
     name: "",
     description: "",
     price: "",
-    category: "female", // default
-    images: [] as string[],
+    category: "female",
+    images: [],
     type: "",
   });
   const [uploading, setUploading] = useState(false);
@@ -28,97 +39,179 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
 
   const femaleTypes = ["rings", "earrings", "necklace", "scrunchies", "bracelet", "mini purse"];
   const maleTypes = ["chains", "rings", "bracelet"];
-  const metalArtTypes = ["eternal steel art", "metal art"]; // NEW
+  const metalArtTypes = ["eternal steel art", "metal art"];
   
-  const catMap = {
+  const catMap: Record<Category, string> = {
     female: "FEMALE",
     male: "MALE",
     "metal-art": "METAL_ART",
     featured: "FEATURED",
   };
 
-  // MULTI upload handler - ALWAYS ENABLED FOR ADMIN
+  // Upload images function
   async function uploadImages(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
     
-    // Max 3 only
     if (form.images.length + files.length > 3) {
-      toast({ title: "Max 3 images allowed", variant: "destructive" });
+      toast({ 
+        title: "Too many images", 
+        description: "Maximum 3 images allowed", 
+        variant: "destructive" 
+      });
       return;
     }
+
     setUploading(true);
+    let successCount = 0;
+    let failCount = 0;
 
-    for (const file of files) {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
+    try {
+      for (const file of files) {
+        // File validation
+        if (!file.type.startsWith('image/')) {
+          toast({ 
+            title: "Invalid file", 
+            description: `${file.name} is not an image file`, 
+            variant: "destructive" 
+          });
+          failCount++;
+          continue;
+        }
 
-      if (!res.ok) {
-        toast({ title: "Upload failed", description: data.error, variant: "destructive" });
-      } else {
-        // Add uploaded image URL to form.images (prev)
-        setForm(prev => ({ ...prev, images: [...prev.images, data.url] }));
-        toast({ title: "Image uploaded" });
+        if (file.size > 5 * 1024 * 1024) {
+          toast({ 
+            title: "File too large", 
+            description: `${file.name} exceeds 5MB limit`, 
+            variant: "destructive" 
+          });
+          failCount++;
+          continue;
+        }
+
+        const fd = new FormData();
+        fd.append("file", file);
+        
+        try {
+          const res = await fetch("/api/upload", { method: "POST", body: fd });
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || `Failed to upload ${file.name}`);
+          }
+
+          setForm(prev => ({ ...prev, images: [...prev.images, data.url] }));
+          successCount++;
+        } catch (error) {
+          console.error(`Upload failed for ${file.name}:`, error);
+          toast({ 
+            title: "Upload failed", 
+            description: `Failed to upload ${file.name}`, 
+            variant: "destructive" 
+          });
+          failCount++;
+        }
       }
+
+      if (successCount > 0) {
+        toast({ 
+          title: "Upload complete", 
+          description: `${successCount} image(s) uploaded successfully` 
+        });
+      }
+
+    } finally {
+      setUploading(false);
+      e.target.value = "";
     }
-    setUploading(false);
-    // reset input value so you can re-upload same file if you removed it
-    e.target.value = "";
   }
 
-  // Remove image from form.images
   function removeImage(idx: number) {
     setForm(prev => ({
       ...prev,
       images: prev.images.filter((_, i) => i !== idx),
     }));
+    toast({ title: "Image removed" });
+  }
+
+  function validateForm(): string | null {
+    if (!form.name.trim()) return "Product name is required";
+    if (!form.description.trim()) return "Description is required";
+    if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) {
+      return "Valid price is required";
+    }
+    if (!form.images.length) return "At least one image is required";
+    if (form.images.length > 3) return "Maximum 3 images allowed";
+    
+    const needsType = ["female", "male", "metal-art"].includes(form.category);
+    if (needsType && !form.type) {
+      return "Product type is required for this category";
+    }
+    
+    return null;
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.images.length) {
-      return toast({ title: "At least one image required", variant: "destructive" });
+    
+    const validationError = validateForm();
+    if (validationError) {
+      toast({ title: "Validation Error", description: validationError, variant: "destructive" });
+      return;
     }
-    if (form.images.length > 3) {
-      return toast({ title: "Max 3 images allowed", variant: "destructive" });
-    }
-    if ((form.category === "female" || form.category === "male" || form.category === "metal-art") && !form.type) {
-      return toast({ title: "Type required", description: "Please select product type.", variant: "destructive" });
-    }
+
     setSaving(true);
 
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
+    try {
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim(),
         price: Number(form.price),
-        category: catMap[form.category as keyof typeof catMap],
-        type: (form.category === "female" || form.category === "male" || form.category === "metal-art") ? form.type : undefined,
-      }),
-    });
+        category: catMap[form.category],
+        images: form.images,
+        type: (form.category === "female" || form.category === "male" || form.category === "metal-art") 
+          ? form.type 
+          : undefined,
+      };
 
-    setSaving(false);
-    if (res.ok) {
-      toast({ title: "Product added" });
-      setForm({
-        name: "",
-        description: "",
-        price: "",
-        category: "female",
-        images: [],
-        type: "",
+      console.log('[DEBUG] Submitting payload:', JSON.stringify(payload, null, 2));
+
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      onProductAdded?.();
-    } else {
-      const { error } = await res.json();
-      toast({ title: "Save failed", description: error, variant: "destructive" });
+
+      const responseData = await res.json();
+      console.log('[DEBUG] API response:', responseData);
+
+      if (res.ok) {
+        toast({ title: "Success", description: "Product added successfully" });
+        setForm({
+          name: "",
+          description: "",
+          price: "",
+          category: "female",
+          images: [],
+          type: "",
+        });
+        onProductAdded?.();
+      } else {
+        throw new Error(responseData.error || "Failed to save product");
+      }
+    } catch (error) {
+      console.error("Submit error:", error);
+      toast({ 
+        title: "Save failed", 
+        description: error instanceof Error ? error.message : "Unknown error", 
+        variant: "destructive" 
+      });
+    } finally {
+      setSaving(false);
     }
   }
 
-  const showTypeSelector = form.category === "female" || form.category === "male" || form.category === "metal-art";
+  const showTypeSelector = ["female", "male", "metal-art"].includes(form.category);
   const currentTypeOptions =
     form.category === "female"
       ? femaleTypes
@@ -130,56 +223,70 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
 
   return (
     <form onSubmit={submit} className="grid gap-4">
-      <Label>Product name</Label>
-      <Input
-        value={form.name}
-        onChange={e => setForm({ ...form, name: e.target.value })}
-        required
-      />
+      <div>
+        <Label htmlFor="name">Product name *</Label>
+        <Input
+          id="name"
+          value={form.name}
+          onChange={e => setForm({ ...form, name: e.target.value })}
+          placeholder="Enter product name"
+          required
+        />
+      </div>
 
-      <Label>Description</Label>
-      <Textarea
-        value={form.description}
-        onChange={e => setForm({ ...form, description: e.target.value })}
-        required
-      />
+      <div>
+        <Label htmlFor="description">Description *</Label>
+        <Textarea
+          id="description"
+          value={form.description}
+          onChange={e => setForm({ ...form, description: e.target.value })}
+          placeholder="Enter product description"
+          required
+        />
+      </div>
 
-      <Label>Price</Label>
-      <Input
-        type="number"
-        step="0.01"
-        value={form.price}
-        onChange={e => setForm({ ...form, price: e.target.value })}
-        required
-      />
+      <div>
+        <Label htmlFor="price">Price *</Label>
+        <Input
+          id="price"
+          type="number"
+          step="0.01"
+          min="0"
+          value={form.price}
+          onChange={e => setForm({ ...form, price: e.target.value })}
+          placeholder="0.00"
+          required
+        />
+      </div>
 
-      <Label>Category</Label>
-      <Select
-        value={form.category as any}
-        onValueChange={v => setForm(prev => ({
-          ...prev,
-          category: v,
-          type: "",
-        }))}
-      >
-        <SelectTrigger>
-          <SelectValue placeholder="Choose" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="female">Female</SelectItem>
-          <SelectItem value="male">Male</SelectItem>
-          <SelectItem value="metal-art">Metal Art</SelectItem>
-          <SelectItem value="featured">Featured</SelectItem>
-        </SelectContent>
-      </Select>
+      <div>
+        <Label>Category *</Label>
+        <Select
+          value={form.category}
+          onValueChange={(v: Category) => setForm(prev => ({
+            ...prev,
+            category: v,
+            type: "",
+          }))}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Choose category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="female">Female</SelectItem>
+            <SelectItem value="male">Male</SelectItem>
+            <SelectItem value="metal-art">Metal Art</SelectItem>
+            <SelectItem value="featured">Featured</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {showTypeSelector && (
-        <>
-          <Label>Product Type</Label>
+        <div>
+          <Label>Product Type *</Label>
           <Select
             value={form.type}
             onValueChange={value => setForm({ ...form, type: value })}
-            required
           >
             <SelectTrigger>
               <SelectValue placeholder="Choose type" />
@@ -187,45 +294,54 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
             <SelectContent>
               {currentTypeOptions.map(t => (
                 <SelectItem key={t} value={t}>
-                  {t[0].toUpperCase() + t.slice(1)}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </>
+        </div>
       )}
 
-      {/* Image Upload - ALWAYS ENABLED FOR ADMIN */}
-      <Label>Images (Max 3)</Label>
-      <Input
-        type="file"
-        accept="image/*"
-        multiple
-        disabled={form.images.length >= 3 || uploading}
-        onChange={uploadImages}
-        // Removed 'required' to allow submission after uploading and clearing the input
-      />
-      <div className="flex gap-3 mt-2">
-        {form.images.map((url, idx) => (
-          <div key={idx} className="relative">
-            <img
-              src={url}
-              alt={`preview-${idx + 1}`}
-              className="w-24 h-24 object-cover rounded border"
-            />
-            <button
-              type="button"
-              aria-label="Remove image"
-              onClick={() => removeImage(idx)}
-              className="absolute top-0 right-0 bg-black text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
-              style={{ lineHeight: 1 }}
-            >×</button>
-          </div>
-        ))}
+      <div>
+        <Label>Images * (Max 3)</Label>
+        <Input
+          type="file"
+          accept="image/*"
+          multiple
+          disabled={form.images.length >= 3 || uploading}
+          onChange={uploadImages}
+        />
+        {uploading && (
+          <p className="text-sm text-muted-foreground mt-1">
+            Uploading images...
+          </p>
+        )}
       </div>
 
-      <Button disabled={uploading || saving}>
-        {saving ? "Saving…" : "Add product"}
+      {form.images.length > 0 && (
+        <div className="flex gap-3 mt-2">
+          {form.images.map((url, idx) => (
+            <div key={idx} className="relative">
+              <img
+                src={url}
+                alt={`Product preview ${idx + 1}`}
+                className="w-24 h-24 object-cover rounded border"
+              />
+              <button
+                type="button"
+                aria-label={`Remove image ${idx + 1}`}
+                onClick={() => removeImage(idx)}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button type="submit" disabled={uploading || saving} className="mt-4">
+        {saving ? "Saving..." : uploading ? "Uploading..." : "Add Product"}
       </Button>
     </form>
   );

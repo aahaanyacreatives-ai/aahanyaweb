@@ -1,0 +1,2 @@
+overrides:
+  example-connector: link:../../../AppData/Local/pnpm/global/5/node_modules/dataconnect-generated/js/example-connector

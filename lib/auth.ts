@@ -1,4 +1,4 @@
-// lib/auth.ts
+// lib/auth.ts - UPDATED FOR FIREBASE (MINOR CLEANUP, NO MAJOR CHANGES)
 import { getServerSession } from "next-auth";
 import authConfig from "@/auth.config";
 import type { User } from "@/lib/types"; // Assume this type includes 'role' (e.g., { id: string, email: string, role: string, ... })

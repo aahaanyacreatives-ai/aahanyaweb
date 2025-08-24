@@ -1,36 +1,54 @@
-// C:\Users\Asus\OneDrive\Desktop\aahaanya-creatives\middleware.ts
-import { withAuth } from 'next-auth/middleware';
-import { NextResponse } from 'next/server';
+import { withAuth } from "next-auth/middleware";
+import { NextResponse } from "next/server";
 
 export default withAuth(
   function middleware(req) {
     const token = req.nextauth.token;
-    const role = token?.role || 'user';
+    const path = req.nextUrl.pathname;
     const timestamp = new Date().toISOString();
-    console.log(`[DEBUG ${timestamp}] Middleware called - Path: ${req.nextUrl.pathname}, Role: ${role}, Token exists: ${!!token}`);
+    
+    console.log(`[DEBUG ${timestamp}] Middleware - Path: ${path}, Token:`, JSON.stringify(token));
 
-    // If no token at all, redirect to login (only for protected routes)
+    // No token means not authenticated
     if (!token) {
       console.log(`[DEBUG ${timestamp}] No token - Redirecting to /login`);
-      return NextResponse.redirect(new URL('/login', req.url));
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("callbackUrl", req.url);
+      return NextResponse.redirect(loginUrl);
     }
 
-    // Check for admin routes
-    if (req.nextUrl.pathname.startsWith('/admin')) {
-      if (role !== 'admin') {
-        console.log(`[DEBUG ${timestamp}] Non-admin access denied - Redirecting to /`);
-        return NextResponse.redirect(new URL('/', req.url));
+    const role = token.role as string ?? "user";
+    console.log(`[DEBUG ${timestamp}] User role from token:`, role);
+
+    // Admin routes protection
+    if (path.startsWith("/admin")) {
+      console.log(`[DEBUG ${timestamp}] Admin route check - User role: ${role}`);
+      if (role !== "admin") {
+        console.log(`[DEBUG ${timestamp}] Non-admin access denied`);
+        return NextResponse.redirect(new URL("/", req.url));
       }
+      
+      // Add role to headers for debugging
+      const response = NextResponse.next();
+      response.headers.set("x-user-role", role);
+      return response;
     }
 
+    // Allow access
+    console.log(`[DEBUG ${timestamp}] Access granted - Role: ${role}`);
     return NextResponse.next();
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token // Require authentication for matched routes
+    }
   }
-  // Remove the callbacks object entirely
 );
 
+// Protect these routes
 export const config = {
   matcher: [
-    '/admin/:path*',
-    '/my-orders/:path*',
+    "/admin/:path*",
+    "/my-orders/:path*",
   ]
 };

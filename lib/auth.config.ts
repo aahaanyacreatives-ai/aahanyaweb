@@ -1,39 +1,86 @@
 // lib/auth.config.ts
 import type { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import type { JWT } from 'next-auth/jwt';
-import type { Session, User } from 'next-auth';
+import GoogleProvider from 'next-auth/providers/google';
 import { compare } from 'bcryptjs';
-import { connectToDatabase } from '@/lib/db/mongodb';
-import { User as UserModel } from '@/models/user';
+import { FirestoreAdapter } from '@next-auth/firebase-adapter';
+import { cert } from 'firebase-admin/app';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
-export default {
-  providers: [ /* same as before */ ],
+const authOptions: AuthOptions = {
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
+
+    CredentialsProvider({
+      name: 'Email / Password',
+      credentials: {
+        email: { label: 'Email', type: 'text' },
+        password: { label: 'Password', type: 'password' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null;
+
+        try {
+          const userDocRef = doc(db, 'users', credentials.email.toLowerCase().trim());
+          const userSnap = await getDoc(userDocRef);
+
+          if (!userSnap.exists()) return null;
+
+          const userData = userSnap.data();
+          const isValid = await compare(credentials.password, userData.password);
+          if (!isValid) return null;
+
+          return {
+            id: userSnap.id,
+            name: userData.name ?? userData.email,
+            email: userData.email,
+            role: (userData.role as 'admin' | 'user') ?? 'user',
+          };
+        } catch (error) {
+          console.error('Error in authorize:', error);
+          return null;
+        }
+      },
+    }),
+  ],
+
+  adapter: FirestoreAdapter({
+    credential: cert({
+      projectId: process.env.AUTH_FIREBASE_PROJECT_ID,
+      clientEmail: process.env.AUTH_FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.AUTH_FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  }),
+
   callbacks: {
-    async jwt({ token, user }: { token: JWT; user?: User }) {
-      const timestamp = new Date().toISOString();
-      console.log(`[DEBUG ${timestamp}] JWT callback started - incoming user:`, JSON.stringify(user || 'no user'));
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role;
-        console.log(`[DEBUG ${timestamp}] JWT updated - role set to: ${token.role} - full token:`, JSON.stringify(token));
-      } else {
-        console.log(`[DEBUG ${timestamp}] JWT callback - no new user, existing token:`, JSON.stringify(token));
+        token.role = user.role as 'admin' | 'user';
       }
       return token;
     },
-    async session({ session, token }: { session: Session; token: JWT }) {
-      const timestamp = new Date().toISOString();
-      console.log(`[DEBUG ${timestamp}] Session callback started - incoming token:`, JSON.stringify(token));
+    async session({ session, token }) {
       if (token) {
         session.user.id = token.id as string;
-        session.user.role = token.role as string || 'user'; // Default here too
-        console.log(`[DEBUG ${timestamp}] Session updated - role set to: ${session.user.role} - full session:`, JSON.stringify(session));
-      } else {
-        console.log(`[DEBUG ${timestamp}] Session callback - no token, empty session:`, JSON.stringify(session));
+        session.user.role = token.role as 'admin' | 'user';
       }
       return session;
     },
   },
-  // ... rest of the config same (pages, secret, etc.)
-} satisfies AuthOptions;
+
+  pages: {
+    signIn: '/login',
+  },
+
+  secret: process.env.AUTH_SECRET || 'dev-secret',
+  session: {
+    strategy: 'jwt',
+  },
+};
+
+export default authOptions;

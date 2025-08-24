@@ -1,40 +1,52 @@
-// lib/auth-middleware.ts
+// lib/auth-middleware.ts - FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getToken } from 'next-auth/jwt';
 import { errorResponse } from '@/lib/api-response';
-import authConfig from '@/auth.config';  // Import your auth config
-import type { Session } from 'next-auth'; // For type safety
 
-export async function withAuth(  // Named export (this is key)
+export async function withAuth(
   req: NextRequest,
-  handler: (req: NextRequest, session: Session) => Promise<NextResponse>,
+  handler: (req: NextRequest, token: any) => Promise<NextResponse>,
   options: { requireAdmin?: boolean } = {}
 ) {
   const timestamp = new Date().toISOString();
   try {
     console.log(`[DEBUG ${timestamp}] withAuth called for path: ${req.url}`);
 
-    const session = await getServerSession(authConfig);
-    console.log(`[DEBUG ${timestamp}] Session fetched:`, session ? JSON.stringify(session) : 'No session');
+    // ✅ FIXED: Use getToken instead of getServerSession for API routes
+    const token = await getToken({ 
+      req, 
+      secret: process.env.NEXTAUTH_SECRET 
+    });
 
-    if (!session || !session.user) {
-      console.error(`[DEBUG ${timestamp}] No session or user found`);
+    console.log(`[DEBUG ${timestamp}] Token extracted:`, token ? 'Token found' : 'No token');
+    
+    if (token) {
+      console.log(`[DEBUG ${timestamp}] Token details: id=${token.id}, email=${token.email}, role=${token.role}`);
+    }
+
+    if (!token) {
+      console.error(`[DEBUG ${timestamp}] No token found`);
       return errorResponse('Unauthorized - Please log in', 401);
     }
 
-    // Default to 'user' if role is missing in session
-    const userRole = session.user.role || 'user';
-    console.log(`[DEBUG ${timestamp}] User details: email=${session.user.email || 'unknown'}, role=${userRole}`);
+    if (!token.sub && !token.id) {
+      console.error(`[DEBUG ${timestamp}] Token missing user ID`);
+      return errorResponse('Invalid token', 401);
+    }
+
+    // Default to 'user' if role is missing in token
+    const userRole = token.role || 'user';
+    console.log(`[DEBUG ${timestamp}] User details: email=${token.email || 'unknown'}, role=${userRole}`);
 
     if (options.requireAdmin && userRole !== 'admin') {
-      console.error(`[DEBUG ${timestamp}] Admin access denied for user: ${session.user.email || 'unknown'} (role: ${userRole})`);
+      console.error(`[DEBUG ${timestamp}] Admin access denied for user: ${token.email || 'unknown'} (role: ${userRole})`);
       return errorResponse('Forbidden - Admin access required', 403);
     }
 
     console.log(`[DEBUG ${timestamp}] Auth successful, calling handler`);
-    return handler(req, session);
+    return handler(req, token);
   } catch (error) {
-    console.error(`[DEBUG ${timestamp}] Auth middleware error:`, JSON.stringify(error));
+    console.error(`[DEBUG ${timestamp}] Auth middleware error:`, error);
     return errorResponse('Authentication error', 500);
   }
 }

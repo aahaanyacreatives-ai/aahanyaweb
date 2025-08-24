@@ -1,52 +1,67 @@
-"use client"
+"use client";
 
-import { useFavorites } from "@/components/favorites-provider"
-import { ProductList } from "@/components/product-list"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { useEffect, useState } from "react"
-import type { Product } from "@/lib/types"
+import { useFavorites } from "@/components/favorites-provider";
+import { ProductList } from "@/components/product-list";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
+import type { Product } from "@/lib/types";
 
 export default function FavoritesPage() {
-  // Get only IDs from context!
-  const { favoriteProductIds } = useFavorites()
-
-  // Load all products on mount (or use SWR if you have)
-  const [allProducts, setAllProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
+  const { favoriteProductIds, isLoading: favoritesLoading } = useFavorites();
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchAllProducts() {
-      setLoading(true)
-      const res = await fetch("/api/products")
-      const data = await res.json()
-      setAllProducts(data)
-      setLoading(false)
-    }
-    fetchAllProducts()
-  }, [])
+    const fetchAllProducts = async () => {
+      try {
+        setProductsLoading(true);
+        const res = await fetch("/api/products");
+        const data = await res.json();
+        setAllProducts(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Error fetching products:', error);
+        setAllProducts([]);
+      } finally {
+        setProductsLoading(false);
+      }
+    };
 
-  // Resolve only the favorite ones
-  const favoriteProducts = allProducts.filter(p =>
-    favoriteProductIds.includes(p.id)
-  )
+    fetchAllProducts();
+  }, []);
 
-  // UI:
+  // ✅ Filter products that are in favorites
+  const favoriteProducts = allProducts.filter(product =>
+    favoriteProductIds.includes(product.id)
+  );
+
+  const isLoading = favoritesLoading || productsLoading;
+
   return (
     <div className="container mx-auto px-4 py-8 md:px-6 md:py-12">
       <h1 className="text-3xl font-bold mb-8 text-center">Your Favorite Products</h1>
-      {loading ? (
-        <div className="text-center py-16 text-muted-foreground">Loading...</div>
+      
+      {isLoading ? (
+        <div className="text-center py-16 text-muted-foreground">
+          Loading your favorites...
+        </div>
       ) : favoriteProducts.length === 0 ? (
         <div className="text-center space-y-4">
-          <p className="text-lg text-gray-500">You haven't added any products to your favorites yet.</p>
+          <p className="text-lg text-gray-500">
+            You haven't added any products to your favorites yet.
+          </p>
           <Link href="/" passHref>
             <Button>Start Browsing</Button>
           </Link>
         </div>
       ) : (
-        <ProductList products={favoriteProducts} />
+        <>
+          <p className="text-center mb-6 text-muted-foreground">
+            {favoriteProducts.length} favorite product{favoriteProducts.length !== 1 ? 's' : ''}
+          </p>
+          <ProductList products={favoriteProducts} />
+        </>
       )}
     </div>
-  )
+  );
 }

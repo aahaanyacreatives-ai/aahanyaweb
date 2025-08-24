@@ -10,60 +10,115 @@ interface CartContextType {
   removeItem: (productId: string, customSize?: string) => Promise<void>;
   updateQuantity: (productId: string, quantity: number, customSize?: string) => Promise<void>;
   clearCart: () => Promise<void>;
-  setCartItems: React.Dispatch<React.SetStateAction<CartItem[]>>; // for rare edge cases
+  setCartItems: React.Dispatch<React.SetStateAction<CartItem[]>>;
+  isLoading: boolean;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { status } = useSession();
 
-  // Helper function to normalize cart data safely
-  const normalizeCartItems = (data: any): CartItem[] => {
+  // ✅ FIXED: Enhanced normalize function to fetch product details
+  const normalizeCartItems = async (data: any): Promise<CartItem[]> => {
     if (!Array.isArray(data.cart)) return [];
 
-    return data.cart
-      .filter((it: any) => it.product != null) // Skip items with null/undefined product
-      .map((it: any) => ({
-        product: {
-          ...it.product,
-          id: it.product?._id?.toString?.() ?? it.product?.id ?? '', // Safe access with fallback
-        },
-        quantity: it.quantity,
-        customSize: it.customSize,
-        customImage: it.customImage,
-      }));
+    const validItems = data.cart.filter((it: any) => it.productId != null);
+    
+    // Fetch product details for each cart item
+    const normalizedItems = await Promise.all(
+      validItems.map(async (it: any) => {
+        let product = null;
+        
+        try {
+          // Fetch product details from API
+          const productResponse = await fetch(`/api/products?id=${it.productId}`);
+          if (productResponse.ok) {
+            product = await productResponse.json();
+          }
+        } catch (error) {
+          console.error(`Error fetching product ${it.productId}:`, error);
+        }
+
+        return {
+          id: it.id ?? '',
+          userId: it.userId ?? 'guest',
+          productId: it.productId ?? '',
+          quantity: it.quantity ?? 1,
+          customSize: it.customSize,
+          customImage: it.customImage,
+          createdAt: it.createdAt ?? new Date(),
+          updatedAt: it.updatedAt ?? new Date(),
+          product: product || {
+            id: it.productId,
+            name: 'Unknown Product',
+            price: 0,
+            images: [],
+            description: '',
+            category: '',
+            stock: 0
+          }
+        } as CartItem;
+      })
+    );
+
+    return normalizedItems;
   };
 
-  // Sync cart from backend/localStorage on mount or login/logout
+  // ✅ FIXED: Sync cart with product details
   useEffect(() => {
-    if (status === "authenticated") {
-      // 🟢 Fetch from server
-      fetch("/api/cart")
-        .then((res) => res.json())
-        .then((data) => {
-          setCartItems(normalizeCartItems(data));
-        })
-        .catch((error) => {
-          console.error("Failed to fetch cart:", error);
-          setCartItems([]);
-        });
-    } else {
-      // 🟡 Guest: get from localStorage
-      const storedCart = localStorage.getItem("aahaanya_cart");
-      setCartItems(storedCart ? JSON.parse(storedCart) : []);
+    const loadCart = async () => {
+      setIsLoading(true);
+      
+      try {
+        if (status === "authenticated") {
+          // Fetch from server
+          const res = await fetch("/api/cart");
+          const data = await res.json();
+          const normalizedItems = await normalizeCartItems(data);
+          setCartItems(normalizedItems);
+        } else if (status === "unauthenticated") {
+          // Guest: get from localStorage
+          const storedCart = localStorage.getItem("aahaanya_cart");
+          if (storedCart) {
+            const parsedCart = JSON.parse(storedCart);
+            const normalizedItems = await normalizeCartItems({ cart: parsedCart });
+            setCartItems(normalizedItems);
+          } else {
+            setCartItems([]);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load cart:", error);
+        setCartItems([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (status !== "loading") {
+      loadCart();
     }
   }, [status]);
 
   // Save to localStorage for guests only
   useEffect(() => {
-    if (status !== "authenticated") {
-      localStorage.setItem("aahaanya_cart", JSON.stringify(cartItems));
+    if (status === "unauthenticated" && !isLoading) {
+      const cartData = cartItems.map(item => ({
+        id: item.id,
+        userId: item.userId,
+        productId: item.productId,
+        quantity: item.quantity,
+        customSize: item.customSize,
+        customImage: item.customImage,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt
+      }));
+      localStorage.setItem("aahaanya_cart", JSON.stringify(cartData));
     }
-  }, [cartItems, status]);
-
-  // Core methods -- all now sync with backend if logged in
+  }, [cartItems, status, isLoading]);
 
   const addItem: CartContextType["addItem"] = async (product, quantity, customSize, customImage) => {
     if (status === "authenticated") {
@@ -80,26 +135,39 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Re-fetch cart from backend
       const res = await fetch("/api/cart");
       const data = await res.json();
-      setCartItems(normalizeCartItems(data));
+      const normalizedItems = await normalizeCartItems(data);
+      setCartItems(normalizedItems);
     } else {
-      // Guest: just update local state
+      // Guest: update local state with product details
       setCartItems((prev) => {
         const existingItem = prev.find(
           (item) =>
-            item.product.id === product.id &&
+            item.productId === product.id &&
             item.customSize === customSize &&
             item.customImage === customImage
         );
+        
         if (existingItem) {
           return prev.map((item) =>
-            item.product.id === product.id &&
+            item.productId === product.id &&
             item.customSize === customSize &&
             item.customImage === customImage
               ? { ...item, quantity: item.quantity + quantity }
               : item
           );
         } else {
-          return [...prev, { product, quantity, customSize, customImage }];
+          const newItem: CartItem = {
+            id: Date.now().toString(),
+            userId: 'guest',
+            productId: product.id,
+            quantity,
+            customSize,
+            customImage,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            product: product
+          };
+          return [...prev, newItem];
         }
       });
     }
@@ -112,12 +180,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Re-sync
       const res = await fetch("/api/cart");
       const data = await res.json();
-      setCartItems(normalizeCartItems(data));
+      const normalizedItems = await normalizeCartItems(data);
+      setCartItems(normalizedItems);
     } else {
       setCartItems((prev) =>
         prev.filter(
           (item) =>
-            !(item.product.id === productId && (!customSize || item.customSize === customSize))
+            !(item.productId === productId && (!customSize || item.customSize === customSize))
         )
       );
     }
@@ -137,12 +206,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Re-sync
       const res = await fetch("/api/cart");
       const data = await res.json();
-      setCartItems(normalizeCartItems(data));
+      const normalizedItems = await normalizeCartItems(data);
+      setCartItems(normalizedItems);
     } else {
       setCartItems((prev) =>
         prev.map((item) =>
-          item.product.id === productId && (!customSize || item.customSize === customSize)
-            ? { ...item, quantity: Math.max(1, quantity) }
+          item.productId === productId && (!customSize || item.customSize === customSize)
+            ? { ...item, quantity: Math.max(1, quantity), updatedAt: new Date() }
             : item
         )
       );
@@ -151,12 +221,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart: CartContextType["clearCart"] = async () => {
     if (status === "authenticated") {
-      // Assuming a DELETE endpoint exists to clear the entire cart; implement if not
       await fetch("/api/cart", { method: "DELETE" });
-      setCartItems([]);
-    } else {
-      setCartItems([]);
     }
+    setCartItems([]);
   };
 
   return (
@@ -168,6 +235,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         updateQuantity,
         clearCart,
         setCartItems,
+        isLoading,
       }}
     >
       {children}

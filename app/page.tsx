@@ -1,14 +1,27 @@
-import Link from "next/link"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ProductCard } from "@/components/product-card"
-import { getProducts } from "@/lib/data"
-import type { Product } from "@/lib/types"
+// app/page.tsx - FIXED FOR TYPESCRIPT ERRORS AND FIREBASE
 
-import HeroCarousel from "@/components/HeroCarousel" // Import here
+import Link from "next/link";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProductCard } from "@/components/product-card";
+import { getProducts } from "@/lib/data";  // Your Firebase-based data helper
+import type { Product } from "@/lib/types";
+
+import HeroCarousel from "@/components/HeroCarousel";  // Import here
+
+// Extend NextAuth types to include 'role' (FIXED: Consistent type augmentation; move to global if conflicting)
+import type { DefaultSession } from 'next-auth';
+declare module 'next-auth' {
+  interface Session {
+    user: {
+      id: string;     // FIXED: Added 'id' to match previous declaration
+      role: string;
+    } & DefaultSession['user'];
+  }
+}
 
 export default async function HomePage() {
-  const products: Product[] = await getProducts()
-  const featuredProducts = products.filter((p) => p.category === "FEATURED").slice(0, 4)
+  const products: Product[] = await getProducts();
+  const featuredProducts = products.filter((p) => p.category === "FEATURED").slice(0, 4);
 
   return (
     <div className="flex flex-col min-h-[100dvh]">
@@ -157,5 +170,5 @@ export default async function HomePage() {
         </div>
       </section>
     </div>
-  )
+  );
 }

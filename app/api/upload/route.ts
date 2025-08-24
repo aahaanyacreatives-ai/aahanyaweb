@@ -1,54 +1,89 @@
-import { NextResponse } from "next/server"
-import { v2 as cloudinary } from "cloudinary"
-import { Buffer } from "buffer"
+// app/api/upload/route.ts - COMPLETE FIXED VERSION
+import { NextRequest, NextResponse } from 'next/server';
+import { withAuth } from '@/lib/auth-middleware';
+import * as cloudinary from 'cloudinary';
 
-cloudinary.config({
+const cloudinaryV2 = cloudinary.v2;
+
+// Configure Cloudinary
+cloudinaryV2.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
   api_key: process.env.CLOUDINARY_API_KEY!,
   api_secret: process.env.CLOUDINARY_API_SECRET!,
-})
+});
 
-export async function POST(req: Request) {
-  try {
-    const formData = await  req.formData()
-    const file = formData.get("file") as File
+export async function POST(req: NextRequest) {
+  return withAuth(req, async (req: NextRequest, token: any) => {
+    try {
+      console.log('[DEBUG] Upload API called for user:', token.sub || token.id);
+      
+      // Check if user is admin
+      if (token.role !== 'admin') {
+        return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+      }
 
-    if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
-    }
+      // Get the file from form data
+      const formData = await req.formData();
+      const file = formData.get('file') as File;
+      
+      if (!file) {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
 
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 });
+      }
 
-    const uploadResult = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: "products",
-          resource_type: "image",
-          quality: "auto",
-          transformation: [{ width: 800, crop: "limit" }],
-        },
-        (error, result) => {
-          if (error || !result) {
-            console.error("[Cloudinary Error]:", error)
-            reject(error)
-          } else {
-            resolve({
-              secure_url: result.secure_url,
-              public_id: result.public_id,
-            })
+      // Validate file size (5MB limit)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        return NextResponse.json({ error: "File size must be less than 5MB" }, { status: 400 });
+      }
+
+      // Convert file to buffer
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+
+      // Upload to Cloudinary
+      const uploadResponse = await new Promise<any>((resolve, reject) => {
+        cloudinaryV2.uploader.upload_stream(
+          {
+            resource_type: "auto",
+            folder: "aahanya-products",
+            transformation: [
+              { width: 800, height: 800, crop: "limit" },
+              { quality: "auto:good" },
+              { format: "auto" }
+            ]
+          },
+          (error: any, result: any) => {
+            if (error) {
+              console.error("Cloudinary upload error:", error);
+              reject(error);
+            } else {
+              resolve(result);
+            }
           }
-        }
-      )
-      stream.end(buffer)
-    })
+        ).end(buffer);
+      });
 
-    return NextResponse.json({
-      url: uploadResult.secure_url,
-      public_id: uploadResult.public_id,
-    })
-  } catch (error) {
-    console.error("Upload failed:", error)
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 })
-  }
+      console.log(`✅ Image uploaded successfully: ${uploadResponse.secure_url}`);
+
+      return NextResponse.json({
+        success: true,
+        url: uploadResponse.secure_url,
+        public_id: uploadResponse.public_id,
+        width: uploadResponse.width,
+        height: uploadResponse.height
+      });
+
+    } catch (error) {
+      console.error("[DEBUG] Upload error:", error);
+      return NextResponse.json({
+        error: "Upload failed",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
+    }
+  });
 }

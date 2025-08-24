@@ -1,151 +1,412 @@
+// app/api/orders/route.ts - COMPLETE PERMANENT SOLUTION
 import { NextRequest, NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/db/mongodb';
-import Order from '@/models/order';
-import { Cart } from '@/models/cart';
-import { successResponse, errorResponse } from '@/lib/api-response';
+import { adminDB } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
+import { handleFirebaseError } from '@/lib/firebase-utils';
 import crypto from 'crypto';
 
-// Get user's orders
+interface CartItem {
+  productId: string;
+  name: string;
+  image?: string | null;
+  price: number;
+  quantity: number;
+  customSize?: string | null;
+  customImage?: string | null;
+}
+
+interface OrderItem extends CartItem {
+  name: string;
+}
+
+interface Order {
+  id: string;
+  userId: string;
+  items: OrderItem[];
+  totalAmount: number;
+  status: 'pending' | 'completed' | 'cancelled';
+  orderDate: Date;
+  paymentDetails: Record<string, any>;
+  paymentStatus: 'pending' | 'success' | 'failed';
+}
+
+const ORDERS = adminDB.collection('orders');
+const CART = adminDB.collection('cart');
+const PRODUCTS = adminDB.collection('products');
+
+// GET: Get user's orders (requires authentication)
 export async function GET(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
-      await connectToDatabase();
-      const orders = await Order.find({ user: token.sub })
-        .populate('items.product')
-        .sort({ createdAt: -1 })
-        .exec();
-
-      // Transform orders to match frontend expectations
-      const transformedOrders = orders.map((order: any) => ({
-        id: order._id.toString(),
-        status: order.status,
-        orderDate: order.createdAt,
-        totalAmount: order.totalAmount,
-        items: order.items.map((item: any) => ({
-          name: item.product?.name || 'Unknown Product',
-          price: item.price,
-          quantity: item.quantity,
-          image: item.product?.image || item.product?.images?.[0] || null,
-          customSize: item.customSize || null,
-          customImage: item.customImage || null,
-        })),
-        shippingInfo: order.shippingInfo,
-        paymentStatus: order.paymentStatus,
-      }));
-
-      return NextResponse.json(transformedOrders);
+      console.log('[DEBUG] GET /api/orders called for user:', token.sub || token.id);
+      
+      const userId = token.sub || token.id;
+      
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID not found in token' }, { status: 400 });
+      }
+      
+      // ✅ PERMANENT: This query requires composite index (userId + orderDate)
+      // Index must be created in Firebase Console: Firestore > Indexes > Composite
+      // Fields: userId (Ascending), orderDate (Descending)
+      const snap = await ORDERS.where('userId', '==', userId)
+                              .orderBy('orderDate', 'desc')
+                              .get();
+      
+      console.log('[DEBUG] Orders found:', snap.size);
+      
+      const orders = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          userId: data.userId,
+          items: data.items || [],
+          totalAmount: data.totalAmount || 0,
+          status: data.status || 'pending',
+          orderDate: data.orderDate || data.createdAt,
+          paymentDetails: data.paymentDetails || {},
+          paymentStatus: data.paymentStatus || 'pending',
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          shippingInfo: data.shippingInfo || {}
+        } as Order;
+      });
+      
+      return NextResponse.json(orders);
     } catch (error) {
-      console.error('Orders GET error:', error);
-      return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
+      console.error('[DEBUG] Orders GET error:', error);
+      
+      // Handle specific Firestore index error
+      if (error && typeof error === 'object' && 'code' in error && error.code === 9) {
+        return NextResponse.json({ 
+          error: 'Database index required. Please create composite index for orders collection.',
+          details: 'Create index with fields: userId (Ascending), orderDate (Descending)',
+          indexRequired: true
+        }, { status: 500 });
+      }
+      
+      return NextResponse.json({ 
+        error: 'Failed to fetch orders', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      }, { status: 500 });
     }
   });
 }
 
-// Create a new order
+// POST: Create new order (requires authentication)
 export async function POST(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
-      await connectToDatabase();
+      console.log('[DEBUG] POST /api/orders called for user:', token.sub || token.id);
+      
+      const userId = token.sub || token.id;
+      
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID not found in token' }, { status: 400 });
+      }
+      
       const { shippingInfo } = await req.json();
 
       // Get cart items
-      const cartItems = await Cart.find({ user: token.sub })
-        .populate('product')
-        .exec();
-
-      if (!cartItems.length) {
+      const cartSnap = await CART.where('userId', '==', userId).get();
+      if (cartSnap.empty) {
         return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
       }
 
-      // Calculate total amount and prepare order items
-      const items = cartItems.map((item: any) => ({
-        product: item.product._id,
-        quantity: item.quantity,
-        price: item.product.price,
-        customSize: item.customSize,
-        customImage: item.customImage,
-      }));
+      // Process cart items and validate products
+      const items: OrderItem[] = [];
+      let totalAmount = 0;
 
-      const totalAmount = items.reduce(
-        (total: number, item: any) => total + (item.price * item.quantity),
-        0
-      );
+      for (const cartDoc of cartSnap.docs) {
+        const cartData = cartDoc.data();
+        
+        // Validate product exists and has stock
+        const productRef = PRODUCTS.doc(cartData.productId);
+        const productSnap = await productRef.get();
+        
+        if (!productSnap.exists) {
+          return NextResponse.json({
+            error: 'Product not found',
+            details: `Product ${cartData.productId} no longer exists`
+          }, { status: 404 });
+        }
+        
+        const productData = productSnap.data()!;
+        
+        // Check stock if product has stock tracking
+        if (productData.stock !== undefined && productData.stock < cartData.quantity) {
+          return NextResponse.json({
+            error: 'Insufficient stock',
+            details: `Not enough stock for ${productData.name}. Available: ${productData.stock}, Requested: ${cartData.quantity}`
+          }, { status: 400 });
+        }
 
-      // Create order (status: 'pending')
-      const order = await Order.create({
-        user: token.sub,
+        const orderItem: OrderItem = {
+          productId: cartData.productId,
+          name: productData.name || cartData.name || 'Unknown Product',
+          image: cartData.image || productData.images?.[0] || null,
+          price: productData.price || cartData.price || 0,
+          quantity: cartData.quantity || 1,
+          customSize: cartData.customSize || null,
+          customImage: cartData.customImage || null
+        };
+
+        items.push(orderItem);
+        totalAmount += orderItem.price * orderItem.quantity;
+      }
+
+      // Create order data
+      const orderData = {
+        userId,
         items,
         totalAmount,
-        shippingInfo,
+        status: 'pending' as const,
+        orderDate: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        paymentDetails: {},
+        paymentStatus: 'pending' as const,
+        shippingInfo: shippingInfo || {}
+      };
+
+      // Use transaction to ensure atomicity
+      const orderRef = ORDERS.doc();
+      
+      await adminDB.runTransaction(async (transaction) => {
+        // Create order
+        transaction.set(orderRef, { ...orderData, id: orderRef.id });
+        
+        // Update product stock if applicable
+        for (const item of items) {
+          const productRef = PRODUCTS.doc(item.productId);
+          const productSnap = await transaction.get(productRef);
+          
+          if (productSnap.exists) {
+            const productData = productSnap.data()!;
+            if (productData.stock !== undefined) {
+              transaction.update(productRef, {
+                stock: productData.stock - item.quantity,
+                updatedAt: new Date()
+              });
+            }
+          }
+        }
+        
+        // Clear cart items
+        cartSnap.docs.forEach(doc => {
+          transaction.delete(doc.ref);
+        });
       });
 
-      // Clear cart
-      await Cart.deleteMany({ user: token.sub });
+      console.log('[DEBUG] Order created with ID:', orderRef.id);
 
       return NextResponse.json({ 
         success: true, 
-        order: {
-          id: order._id.toString(),
-          status: order.status,
-          totalAmount: order.totalAmount,
+        message: 'Order created successfully',
+        order: { 
+          id: orderRef.id, 
+          ...orderData 
         }
-      });
+      }, { status: 201 });
+
     } catch (error) {
-      console.error('Order creation error:', error);
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
+      console.error('[DEBUG] Order creation error:', error);
+      if (error && typeof error === 'object' && 'code' in error) {
+        return handleFirebaseError(error);
+      }
+      return NextResponse.json({ 
+        error: 'Failed to create order',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, { status: 500 });
     }
   });
 }
 
-// PATCH to verify payment and update order status
+// PATCH: Verify payment and update order (requires authentication)
 export async function PATCH(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
-      await connectToDatabase();
+      console.log('[DEBUG] PATCH /api/orders called for user:', token.sub || token.id);
+      
+      const userId = token.sub || token.id;
+      
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID not found in token' }, { status: 400 });
+      }
+      
       const { orderId, razorpay_payment_id, razorpay_order_id, razorpay_signature } = await req.json();
 
+      // Validate required fields
       if (!orderId || !razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
-        return NextResponse.json({ error: 'Missing payment verification details' }, { status: 400 });
+        return NextResponse.json({ 
+          error: 'Missing payment verification details',
+          required: ['orderId', 'razorpay_payment_id', 'razorpay_order_id', 'razorpay_signature']
+        }, { status: 400 });
       }
 
-      // Verify Razorpay signature
+      // Check if Razorpay secret is configured
+      if (!process.env.RAZORPAY_KEY_SECRET) {
+        console.error('[DEBUG] RAZORPAY_KEY_SECRET not configured');
+        return NextResponse.json({ 
+          error: 'Payment gateway not configured' 
+        }, { status: 500 });
+      }
+
+      // Verify payment signature
       const generatedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
         .digest('hex');
 
       if (generatedSignature !== razorpay_signature) {
+        console.error('[DEBUG] Payment signature verification failed');
         return NextResponse.json({ error: 'Payment verification failed' }, { status: 400 });
       }
 
-      // Update order status to 'completed' and add payment details
-      const updatedOrder = await Order.findByIdAndUpdate(
-        orderId,
-        {
-          status: 'completed',
-          paymentStatus: 'success',
-          paymentDetails: {
-            razorpay_order_id,
-            razorpay_payment_id,
-            razorpay_signature,
-          },
-        },
-        { new: true }
-      );
-
-      if (!updatedOrder) {
+      // Get and validate order
+      const orderRef = ORDERS.doc(orderId);
+      const orderSnap = await orderRef.get();
+      
+      if (!orderSnap.exists) {
         return NextResponse.json({ error: 'Order not found' }, { status: 404 });
       }
 
+      const orderData = orderSnap.data();
+      
+      // Verify order belongs to user
+      if (orderData?.userId !== userId) {
+        console.error('[DEBUG] Unauthorized access to order:', orderId, 'by user:', userId);
+        return NextResponse.json({ error: 'Unauthorized access to order' }, { status: 403 });
+      }
+
+      // Update order with payment details
+      const updateData = {
+        status: 'completed',
+        paymentStatus: 'success',
+        paymentDetails: {
+          razorpay_order_id,
+          razorpay_payment_id,
+          razorpay_signature,
+          verifiedAt: new Date()
+        },
+        updatedAt: new Date()
+      };
+
+      await orderRef.update(updateData);
+      console.log('[DEBUG] Order payment verified and updated:', orderId);
+
+      // Get updated order data
+      const updatedOrderSnap = await orderRef.get();
+      const updatedOrder = updatedOrderSnap.data();
+
       return NextResponse.json({ 
         success: true, 
-        message: 'Payment verified and order updated',
-        order: updatedOrder 
+        message: 'Payment verified and order updated successfully',
+        order: { 
+          id: orderId, 
+          ...updatedOrder 
+        }
       });
+
     } catch (error) {
-      console.error('Payment verification error:', error);
-      return NextResponse.json({ error: 'Failed to verify payment' }, { status: 500 });
+      console.error('[DEBUG] Payment verification error:', error);
+      if (error && typeof error === 'object' && 'code' in error) {
+        return handleFirebaseError(error);
+      }
+      return NextResponse.json({ 
+        error: 'Failed to verify payment',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, { status: 500 });
+    }
+  });
+}
+
+// DELETE: Cancel order (requires authentication, only for pending orders)
+export async function DELETE(req: NextRequest) {
+  return withAuth(req, async (req: NextRequest, token: any) => {
+    try {
+      console.log('[DEBUG] DELETE /api/orders called for user:', token.sub || token.id);
+      
+      const userId = token.sub || token.id;
+      const { searchParams } = new URL(req.url);
+      const orderId = searchParams.get('orderId');
+      
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID not found in token' }, { status: 400 });
+      }
+      
+      if (!orderId) {
+        return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
+      }
+
+      // Get order
+      const orderRef = ORDERS.doc(orderId);
+      const orderSnap = await orderRef.get();
+      
+      if (!orderSnap.exists) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
+      const orderData = orderSnap.data();
+      
+      // Verify order belongs to user
+      if (orderData?.userId !== userId) {
+        return NextResponse.json({ error: 'Unauthorized access to order' }, { status: 403 });
+      }
+
+      // Only allow cancellation of pending orders
+      if (orderData?.status !== 'pending') {
+        return NextResponse.json({ 
+          error: 'Only pending orders can be cancelled',
+          currentStatus: orderData?.status 
+        }, { status: 400 });
+      }
+
+      // Use transaction to restore stock and update order
+      await adminDB.runTransaction(async (transaction) => {
+        // Update order status
+        transaction.update(orderRef, {
+          status: 'cancelled',
+          updatedAt: new Date(),
+          cancelledAt: new Date()
+        });
+
+        // Restore product stock if applicable
+        if (orderData?.items) {
+          for (const item of orderData.items) {
+            const productRef = PRODUCTS.doc(item.productId);
+            const productSnap = await transaction.get(productRef);
+            
+            if (productSnap.exists) {
+              const productData = productSnap.data()!;
+              if (productData.stock !== undefined) {
+                transaction.update(productRef, {
+                  stock: productData.stock + item.quantity,
+                  updatedAt: new Date()
+                });
+              }
+            }
+          }
+        }
+      });
+
+      console.log('[DEBUG] Order cancelled and stock restored:', orderId);
+
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Order cancelled successfully',
+        orderId: orderId
+      });
+
+    } catch (error) {
+      console.error('[DEBUG] Order cancellation error:', error);
+      if (error && typeof error === 'object' && 'code' in error) {
+        return handleFirebaseError(error);
+      }
+      return NextResponse.json({ 
+        error: 'Failed to cancel order',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, { status: 500 });
     }
   });
 }

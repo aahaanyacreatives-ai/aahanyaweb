@@ -1,24 +1,42 @@
-"use client"
+"use client";
 
-import Image from "next/image"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useCart } from "@/components/cart-provider"
-import { Trash2 } from "lucide-react"
+import Image from "next/image";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useCart } from "@/components/cart-provider";
+import { Trash2 } from "lucide-react";
 
 export default function CartPage() {
-  const { cartItems, removeItem, updateQuantity, clearCart } = useCart()
+  const { cartItems, removeItem, updateQuantity, clearCart, isLoading } = useCart();
 
-  const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
-  const shipping = 50.0 // Example fixed shipping cost
-  const total = subtotal + shipping
+  // ✅ FIXED: Safe total calculation with optional chaining
+  const subtotal = cartItems?.reduce((sum, item) => {
+    const price = item?.product?.price ?? 0;
+    const quantity = item?.quantity ?? 1;
+    return sum + (price * quantity);
+  }, 0) ?? 0;
+
+  const shipping = 50.0;
+  const total = subtotal + shipping;
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 md:px-6 md:py-12">
+        <h1 className="text-3xl font-bold mb-8 text-center">Your Shopping Cart</h1>
+        <div className="text-center">
+          <p>Loading cart...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-6 md:py-12">
       <h1 className="text-3xl font-bold mb-8 text-center">Your Shopping Cart</h1>
-      {cartItems.length === 0 ? (
+      {!cartItems || cartItems.length === 0 ? (
         <div className="text-center space-y-4">
           <p className="text-lg text-gray-500">Your cart is empty.</p>
           <Link href="/" passHref>
@@ -40,44 +58,61 @@ export default function CartPage() {
               </TableHeader>
               <TableBody>
                 {cartItems.map((item) => (
-                  <TableRow key={item.product.id + (item.customSize || "") + (item.customImage || "")}>
-                    {/* Unique key for customized items */}
+                  <TableRow key={`${item.productId}-${item.customSize || ''}-${item.customImage || ''}`}>
                     <TableCell className="hidden sm:table-cell">
                       <Image
                         src={
-  item.customImage
-    || (item.product.images && item.product.images.length > 0 ? item.product.images[0] : undefined)
-    || "/placeholder.svg?height=64&width=64&query=jewelry%20cart%20item"
-}
+                          item.customImage ||
+                          (item?.product?.images && item.product.images.length > 0 
+                            ? item.product.images[0] 
+                            : "/placeholder.svg?height=64&width=64&query=jewelry%20cart%20item"
+                          )
+                        }
                         width={64}
                         height={64}
-                        alt={item.product.name}
+                        alt={item?.product?.name ?? "Product"}
                         className="aspect-square rounded-md object-cover"
                       />
                     </TableCell>
                     <TableCell className="font-medium">
-                      <Link href={`/products/${item.product.id}`} className="hover:underline" prefetch={false}>
-                        {item.product.name}
+                      <Link 
+                        href={`/products/${item.productId}`} 
+                        className="hover:underline" 
+                        prefetch={false}
+                      >
+                        {item?.product?.name ?? "Unknown Product"}
                       </Link>
-                      {item.customSize && <p className="text-xs text-muted-foreground">Size: {item.customSize}</p>}
-                      {item.customImage && <p className="text-xs text-muted-foreground">Custom Image Added</p>}
+                      {item.customSize && (
+                        <p className="text-xs text-muted-foreground">Size: {item.customSize}</p>
+                      )}
+                      {item.customImage && (
+                        <p className="text-xs text-muted-foreground">Custom Image Added</p>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       <Input
                         type="number"
                         min="1"
                         value={item.quantity}
-                        onChange={(e) => updateQuantity(item.product.id, Number.parseInt(e.target.value))}
+                        onChange={(e) => {
+                          const newQuantity = parseInt(e.target.value) || 1;
+                          updateQuantity(item.productId, newQuantity, item.customSize);
+                        }}
                         className="w-20 text-center"
                       />
                     </TableCell>
-                    <TableCell className="text-right">₹{item.product.price.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">
+                      ₹{item?.product?.price?.toFixed(2) ?? "0.00"}
+                    </TableCell>
                     <TableCell>
-                     <Button variant="ghost" size="icon" onClick={() => removeItem(item.product.id, item.customSize)}>
-  <Trash2 className="h-4 w-4" />
-  <span className="sr-only">Remove</span>
-</Button>
-
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => removeItem(item.productId, item.customSize)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Remove</span>
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -110,5 +145,5 @@ export default function CartPage() {
         </div>
       )}
     </div>
-  )
+  );
 }

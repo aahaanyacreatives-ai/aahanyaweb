@@ -1,58 +1,82 @@
+// app/admin/dashboard/page.tsx - FIXED FOR TYPESCRIPT ERRORS AND FIREBASE
+
 'use client';
+
 import { useEffect, useState } from 'react';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from "next-auth/react";
+import type { DefaultSession } from "next-auth";
+  // FIXED: Import DefaultSession
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+
+// Import UI components individually (FIXED: No barrel import if alias not set; use shadcn/ui paths)
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import Image from "next/image";
+import { Card } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
+import { CardDescription } from "@/components/ui/card";
+import { CardHeader } from "@/components/ui/card";
+import { CardTitle } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
+import { TableBody } from "@/components/ui/table";
+import { TableCell } from "@/components/ui/table";
+import { TableHead } from "@/components/ui/table";
+import { TableHeader } from "@/components/ui/table";
+import { TableRow } from "@/components/ui/table";
+
 import { AddProductForm } from "@/components/add-product-form";
 import { DeleteProductButton } from "@/components/delete-product-button";
 import { CreateCouponForm } from "@/components/create-coupon-form";
 import type { Product, Coupon } from "@/lib/types";
 
+// Types are now defined in /types/next-auth.d.ts
+
 // Define Order type
 interface Order {
-  _id: string;
+  id: string;
   totalAmount: number;
   status: string;
 }
 
 export default function AdminDashboardPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [totalEarnings, setTotalEarnings] = useState(0);
   const [totalOrders, setTotalOrders] = useState(0);
-  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function initialize() {
+      if (status === 'loading') return;
+      if (status === 'unauthenticated' || session?.user?.role !== 'admin') {
+        router.push('/login');
+        return;
+      }
+
       try {
-        // Fetch products
-        const productsRes = await fetch('/api/products');
-        if (productsRes.ok) setProducts(await productsRes.json());
+        const [prodRes, couponRes, orderRes] = await Promise.all([
+          fetch('/api/products'),
+          fetch('/api/coupons'),
+          fetch('/api/orders'),
+        ]);
 
-        // Fetch coupons
-        const couponsRes = await fetch('/api/coupons');
-        if (couponsRes.ok) setCoupons(await couponsRes.json());
+        if (!prodRes.ok) throw new Error('Failed to fetch products');
+        if (!couponRes.ok) throw new Error('Failed to fetch coupons');
+        if (!orderRes.ok) throw new Error('Failed to fetch orders');
 
-        // Fetch current user
-        const userRes = await fetch('/api/users/profile');
-        if (userRes.ok) setUser(await userRes.json());
+        const products: Product[] = await prodRes.json();
+        const coupons: Coupon[] = await couponRes.json();
+        const orders: Order[] = await orderRes.json();
 
-        // Fetch orders/earnings
-        const ordersRes = await fetch('/api/orders');
-        if (ordersRes.ok) {
-          const ordersData = await ordersRes.json();
-          const ordersArr: Order[] = ordersData.data || ordersData;
-          setTotalOrders(ordersArr.length);
-          setTotalEarnings(ordersArr.reduce(
-            (sum: number, o: Order) => sum + (o.status === 'completed' ? o.totalAmount : 0), 0
-          ));
-        }
+        setProducts(products);
+        setCoupons(coupons);
+
+        const completedOrders = orders.filter(o => o.status === 'completed');
+        setTotalOrders(completedOrders.length);
+        setTotalEarnings(completedOrders.reduce((sum, o) => sum + o.totalAmount, 0));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to load dashboard data";
         setError(message);
@@ -61,7 +85,7 @@ export default function AdminDashboardPage() {
       }
     }
     initialize();
-  }, []);
+  }, [status, session, router]);
 
   const handleLogout = async () => {
     try {
@@ -73,7 +97,7 @@ export default function AdminDashboardPage() {
   };
 
   if (loading) return <div>Loading dashboard...</div>;
-  if (error) return <div>Error: {error}. Check your MongoDB connection and env vars.</div>;
+  if (error) return <div>Error: {error}. Check your Firebase connection and env vars.</div>;
 
   return (
     <div className="grid gap-6">
@@ -81,9 +105,9 @@ export default function AdminDashboardPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          {user && (
+          {session?.user && (
             <p className="text-lg text-muted-foreground">
-              Welcome, {user.data?.name || user.data?.email || user.name || user.email}! (Role: {user.data?.role || user.role})
+              Welcome, {session.user.name || session.user.email}! (Role: {session.user.role})
             </p>
           )}
         </div>
@@ -201,7 +225,7 @@ export default function AdminDashboardPage() {
               </TableHeader>
               <TableBody>
                 {coupons.map((coupon) => (
-                  <TableRow key={coupon.id || coupon._id}>
+                  <TableRow key={coupon.id}>
                     <TableCell className="font-medium">{coupon.code}</TableCell>
                     <TableCell>{coupon.type === "percentage" ? "Percentage" : "Fixed"}</TableCell>
                     <TableCell className="text-right">
@@ -246,24 +270,20 @@ export default function AdminDashboardPage() {
   );
 }
 
-// Icon Components
+// Icon Components (Moved to bottom for organization)
 function LogOutIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16,17 21,12 16,7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" x2="9" y1="12" y2="12" />
     </svg>
   );
 }
 
 function LineChartIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 3v18h18" />
       <path d="m18 6-7 6-6-6v6" />
     </svg>
@@ -272,9 +292,7 @@ function LineChartIcon(props: React.SVGProps<SVGSVGElement>) {
 
 function PackageIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m7.5 4.27v.713c-.28.14-.545.31-.79.508L3 8v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8l-3.71-2.508c-.245-.198-.51-.368-.79-.508V4.27c0-.57-.47-1.03-1.03-1.03H8.53c-.57 0-1.03.46-1.03 1.03Z" />
       <path d="M16 8.015v.01" />
       <path d="M8 8.015v.01" />
@@ -288,9 +306,7 @@ function PackageIcon(props: React.SVGProps<SVGSVGElement>) {
 
 function ShoppingCartIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="8" cy="21" r="1" />
       <circle cx="19" cy="21" r="1" />
       <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
