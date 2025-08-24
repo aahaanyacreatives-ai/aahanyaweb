@@ -1,30 +1,31 @@
+// scripts/verify-admin.ts - FIXED VERSION
 import { adminDB } from '../lib/firebaseAdmin';
 import { hash } from 'bcryptjs';
+
+// ✅ FIXED: Move function outside of the main function (function expression or top-level)
+const ensureAdmin = async (docRef: any) => {
+  const hashedPassword = await hash('secure123', 10);
+  const now = new Date();
+  
+  const adminData = {
+    email: 'admin@example.com',
+    name: 'Admin User',
+    role: 'admin',
+    hashedPassword,
+    updatedAt: now,
+    createdAt: now,
+  };
+
+  await docRef.set(adminData);
+  console.log('✅ Admin user created/updated with password: secure123');
+  return adminData;
+};
 
 async function validateAndFixAdmin() {
   try {
     console.log('🔍 Checking admin user...');
     const usersCollection = adminDB.collection('users');
     const adminQuery = await usersCollection.where('email', '==', 'admin@example.com').get();
-
-    // Function to create/update admin
-    async function ensureAdmin(docRef: any) {
-      const hashedPassword = await hash('secure123', 10);
-      const now = new Date();
-      
-      const adminData = {
-        email: 'admin@example.com',
-        name: 'Admin User',
-        role: 'admin',
-        hashedPassword,
-        updatedAt: now,
-        createdAt: now,
-      };
-
-      await docRef.set(adminData);
-      console.log('✅ Admin user created/updated with password: secure123');
-      return adminData;
-    }
 
     if (adminQuery.empty) {
       console.log('❌ Admin user not found, creating...');
@@ -47,7 +48,7 @@ async function validateAndFixAdmin() {
 
     // Check if fixes needed
     let needsUpdate = false;
-    const reasons = [];
+    const reasons: string[] = [];
 
     if (adminData.role !== 'admin') {
       reasons.push('missing admin role');
@@ -72,4 +73,11 @@ async function validateAndFixAdmin() {
   }
 }
 
-validateAndFixAdmin();
+// ✅ Execute the function
+validateAndFixAdmin().then(() => {
+  console.log('\n🎉 Admin verification complete');
+  process.exit(0);
+}).catch((error) => {
+  console.error('\n💥 Unexpected error:', error);
+  process.exit(1);
+});

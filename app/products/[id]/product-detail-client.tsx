@@ -98,25 +98,7 @@ export default function ProductDetailClient({ initialProduct }: ProductDetailCli
             </div>
           )}
 
-          {/* Ring Size Selection for Male/Female Products */}
-          {(product.category === "MALE" || product.category === "FEMALE") && product.type === "rings" && (
-            <div className="space-y-2">
-              <Label>Ring Size (Optional)</Label>
-              <Select value={selectedRingSize} onValueChange={setSelectedRingSize}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select ring size" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 13 }, (_, i) => i + 6).map(size => (
-                    <SelectItem key={size} value={size.toString()}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
+          
           <div className="flex gap-4">
             {/* Conditional Button Rendering */}
             {isEternalSteelArt ? (
