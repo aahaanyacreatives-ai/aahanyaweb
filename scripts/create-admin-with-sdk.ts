@@ -158,7 +158,7 @@ createAdminUser()
   .then(() => {
     console.log('');
     console.log('🎊 Script completed successfully!');
-    console.log('🚀 You can now login at: http://localhost:3000/login');
+    console.log('🚀 You can now login at: https://www.aahaanyacreatives.in/login');
     console.log('');
     process.exit(0);
   })
