@@ -79,15 +79,17 @@ export function AddProductForm({ onProductAdded }: { onProductAdded?: () => void
           continue;
         }
 
-        if (file.size > 5 * 1024 * 1024) {
-          toast({ 
-            title: "File too large", 
-            description: `${file.name} exceeds 5MB limit`, 
-            variant: "destructive" 
-          });
-          failCount++;
-          continue;
-        }
+       const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+
+if (file.size > MAX_FILE_SIZE) {
+  toast({ 
+    title: "File too large", 
+    description: `${file.name} exceeds 25MB limit. Consider compressing the image.`, 
+    variant: "destructive" 
+  });
+  failCount++;
+  continue;
+}
 
         const fd = new FormData();
         fd.append("file", file);

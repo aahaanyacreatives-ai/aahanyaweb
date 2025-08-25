@@ -9,13 +9,14 @@ import type { Product } from "@/lib/types";
 import HeroCarousel from "@/components/HeroCarousel";  // Import here
 
 // Extend NextAuth types to include 'role' (FIXED: Consistent type augmentation; move to global if conflicting)
-import type { DefaultSession } from 'next-auth';
-declare module 'next-auth' {
+import type { DefaultSession } from "next-auth";
+
+declare module "next-auth" {
   interface Session {
     user: {
-      id: string;     // FIXED: Added 'id' to match previous declaration
-      role: string;
-    } & DefaultSession['user'];
+      id: string;
+      role: "user" | "admin"; // must match previous declaration
+    } & DefaultSession["user"];
   }
 }
 
@@ -115,7 +116,7 @@ export default async function HomePage() {
             </p>
           </div>
           <div className="grid w-full grid-cols-1 items-center justify-center gap-6 lg:grid-cols-3">
-            <Card>
+            <Card className="w-80 mx-auto shadow-lg rounded-2xl">
               <CardHeader>
                 <CardTitle>Premium Quality</CardTitle>
                 <CardDescription>Each piece is meticulously crafted by skilled artisans.</CardDescription>
@@ -132,24 +133,16 @@ export default async function HomePage() {
                 />
               </CardContent>
             </Card>
-            <Card>
+            <Card className="w-80 mx-auto shadow-lg rounded-2xl">
               <CardHeader>
                 <CardTitle>Unique Designs</CardTitle>
                 <CardDescription>Discover exclusive designs that stand out from the crowd.</CardDescription>
               </CardHeader>
-              <CardContent>
-                <video
-                  src="/gemstone.mp4"
-                  style={{ width: "200px", height: "auto", maxWidth: "100%" }}
-                  className="mx-auto"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                />
-              </CardContent>
+              <CardContent className="flex justify-center">
+                <img src="/unique.jpeg" alt="unique design"   className="w-56 h-56 object-cover rounded-xl"/>
+              </CardContent >
             </Card>
-            <Card>
+            <Card className="w-80 mx-auto shadow-lg rounded-2xl">
               <CardHeader>
                 <CardTitle>Customer Satisfaction</CardTitle>
                 <CardDescription>Your happiness is our priority. Enjoy seamless shopping.</CardDescription>
