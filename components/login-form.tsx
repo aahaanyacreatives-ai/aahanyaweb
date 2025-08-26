@@ -88,9 +88,14 @@ export function LoginForm() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      await signIn("google", {
-        callbackUrl: "/",
-        redirect: true,
+      // 🔥 CRITICAL FIX: Force production URL
+      const productionUrl = "https://www.aahaanyacreatives.in";
+      
+      console.log('[DEBUG] Google login initiated with callback URL:', productionUrl);
+      
+      await signIn("google", { 
+        callbackUrl: productionUrl,
+        redirect: true  // Let NextAuth handle the redirect
       });
     } catch (error) {
       setLoading(false);

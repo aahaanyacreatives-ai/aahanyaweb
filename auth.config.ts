@@ -163,17 +163,15 @@ const authConfig: AuthOptions = {
     async redirect({ url, baseUrl }) {
       console.log('[DEBUG] Redirect callback - URL:', url, 'BaseURL:', baseUrl);
       
-      // If using a relative path, combine it with the base URL
-      if (url.startsWith("/")) {
-        return `${baseUrl}${url}`;
+      // Handle admin redirects
+      if (url.includes('/admin/dashboard')) {
+        console.log('[DEBUG] Admin dashboard redirect detected');
+        return `${baseUrl}/admin/dashboard`;
       }
       
-      // If the URL is already absolute, return it as is
-      if (url.startsWith("http")) {
-        return url;
-      }
-      
-      // Default fallback to base URL
+      // Default redirect handling
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      if (url.startsWith(baseUrl)) return url;
       return baseUrl;
     },
   },
