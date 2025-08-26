@@ -1,4 +1,4 @@
-// components/login-form.tsx - COMPLETE WORKING VERSION
+// components/login-form.tsx - FIXED FOR PRODUCTION CALLBACK
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -88,10 +88,14 @@ export function LoginForm() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      const currentUrl = window.location.origin;
+      // 🔥 CRITICAL FIX: Force production URL
+      const productionUrl = "https://www.aahaanyacreatives.in";
+      
+      console.log('[DEBUG] Google login initiated with callback URL:', productionUrl);
+      
       await signIn("google", { 
-        callbackUrl: currentUrl,
-        redirect: true
+        callbackUrl: productionUrl,
+        redirect: true  // Let NextAuth handle the redirect
       });
     } catch (error) {
       setLoading(false);
@@ -103,7 +107,6 @@ export function LoginForm() {
       });
     }
   };
-
 
   // Show loading spinner while session is loading
   if (status === 'loading') {
