@@ -1,4 +1,4 @@
-// app/api/auth/[...nextauth]/route.ts - ADD REDIRECT CALLBACK
+// app/api/auth/[...nextauth]/route.ts - COMPLETE WORKING VERSION
 import NextAuth, { type AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
@@ -144,37 +144,6 @@ const authConfig: AuthOptions = {
   ],
 
   callbacks: {
-    // ✅ ADD THIS REDIRECT CALLBACK - THIS IS THE FIX!
-    async redirect({ url, baseUrl }) {
-      console.log('[DEBUG] Redirect callback - URL:', url, 'BaseURL:', baseUrl);
-      
-      // Force production URL in production environment
-      const productionUrl = "https://www.aahaanyacreatives.in";
-      
-      // If it's a relative URL, prepend the production domain
-      if (url.startsWith("/")) {
-        const finalUrl = `${productionUrl}${url}`;
-        console.log('[DEBUG] Relative URL redirect to:', finalUrl);
-        return finalUrl;
-      }
-      
-      // If the URL origin matches production, allow it
-      if (new URL(url).origin === productionUrl) {
-        console.log('[DEBUG] Production URL redirect allowed:', url);
-        return url;
-      }
-      
-      // If localhost in dev, allow it
-      if (process.env.NODE_ENV === 'development' && url.includes('localhost')) {
-        console.log('[DEBUG] Development localhost redirect allowed:', url);
-        return url;
-      }
-      
-      // Default to production URL
-      console.log('[DEBUG] Default redirect to production:', productionUrl);
-      return productionUrl;
-    },
-
     async jwt({ token, user }) {
       console.log('[DEBUG] JWT Callback - User:', JSON.stringify(user), 'Token role before:', token.role);
       
