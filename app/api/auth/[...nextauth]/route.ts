@@ -151,9 +151,9 @@ const authConfig: AuthOptions = {
         params: {
           prompt: "consent",
           access_type: "offline",
-          response_type: "code"
+          response_type: "code",
         }
-      }
+      },
     }),
   ],
 
@@ -209,31 +209,37 @@ const authConfig: AuthOptions = {
       }
     },
 
-    // 🔥 CRITICAL FIX: Add redirect callback for production
     async redirect({ url, baseUrl }) {
-      const productionUrl = process.env.NEXTAUTH_URL || "https://www.aahaanyacreatives.in";
+      const productionUrl = process.env.NEXTAUTH_SITE_URL || "https://www.aahaanyacreatives.in";
       
-      console.log('[DEBUG] Redirect callback - URL:', url, 'BaseURL:', baseUrl, 'Production URL:', productionUrl);
+      console.log('[DEBUG] Redirect callback');
+      console.log('- URL:', url);
+      console.log('- Base URL:', baseUrl);
+      console.log('- Production URL:', productionUrl);
       
-      // If URL is relative, use production URL
-      if (url.startsWith("/")) {
-        const redirectUrl = `${productionUrl}${url}`;
-        console.log('[DEBUG] Relative URL redirect to:', redirectUrl);
-        return redirectUrl;
+      // Always ensure we're on the production domain
+      if (url.startsWith('http://localhost') || url.startsWith('https://localhost')) {
+        const parsedUrl = new URL(url);
+        const newUrl = `${productionUrl}${parsedUrl.pathname}${parsedUrl.search}`;
+        console.log('[DEBUG] Redirecting localhost to production:', newUrl);
+        return newUrl;
       }
       
-      // If URL matches the base URL, allow it
-      if (url.startsWith(baseUrl)) {
-        return url;
+      // Handle relative URLs
+      if (url.startsWith('/')) {
+        const fullUrl = `${productionUrl}${url}`;
+        console.log('[DEBUG] Converting relative URL to absolute:', fullUrl);
+        return fullUrl;
       }
       
-      // If URL matches production URL, allow it
+      // If URL is already using production domain, allow it
       if (url.startsWith(productionUrl)) {
+        console.log('[DEBUG] URL already using production domain');
         return url;
       }
       
-      // For any other URL, redirect to production
-      console.log('[DEBUG] Default redirect to production URL');
+      // Default: redirect to production homepage
+      console.log('[DEBUG] Fallback to production homepage');
       return productionUrl;
     }
   },

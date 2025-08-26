@@ -37,8 +37,17 @@ const nextConfig = {
   // Trust the Coolify proxy
   poweredByHeader: false,
   env: {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-    VERCEL_URL: process.env.NEXTAUTH_URL?.replace('https://', ''),
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'https://www.aahaanyacreatives.in',
+    NEXTAUTH_SITE_URL: 'https://www.aahaanyacreatives.in',
+  },
+  // Rewrite auth callbacks
+  async rewrites() {
+    return [
+      {
+        source: '/api/auth/:path*',
+        destination: 'https://www.aahaanyacreatives.in/api/auth/:path*'
+      }
+    ]
   },
 }
 
