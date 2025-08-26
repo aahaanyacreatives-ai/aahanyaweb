@@ -88,15 +88,8 @@ export function LoginForm() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      const productionUrl = process.env.NEXTAUTH_SITE_URL || "https://www.aahaanyacreatives.in";
-      const callbackUrl = `${productionUrl}/api/auth/callback/google`;
-      
-      console.log('[DEBUG] Google login initiated');
-      console.log('[DEBUG] Production URL:', productionUrl);
-      console.log('[DEBUG] Callback URL:', callbackUrl);
-      
       await signIn("google", {
-        callbackUrl: `${productionUrl}/auth/callback/google`,
+        callbackUrl: "/",
         redirect: true,
       });
     } catch (error) {

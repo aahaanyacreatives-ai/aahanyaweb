@@ -14,14 +14,7 @@ const authConfig: AuthOptions = {
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code"
-        }
-      }
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!
     }),
     CredentialsProvider({
       name: "Email / Password",
@@ -170,15 +163,17 @@ const authConfig: AuthOptions = {
     async redirect({ url, baseUrl }) {
       console.log('[DEBUG] Redirect callback - URL:', url, 'BaseURL:', baseUrl);
       
-      // Handle admin redirects
-      if (url.includes('/admin/dashboard')) {
-        console.log('[DEBUG] Admin dashboard redirect detected');
-        return `${baseUrl}/admin/dashboard`;
+      // If using a relative path, combine it with the base URL
+      if (url.startsWith("/")) {
+        return `${baseUrl}${url}`;
       }
       
-      // Default redirect handling
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
-      if (url.startsWith(baseUrl)) return url;
+      // If the URL is already absolute, return it as is
+      if (url.startsWith("http")) {
+        return url;
+      }
+      
+      // Default fallback to base URL
       return baseUrl;
     },
   },
