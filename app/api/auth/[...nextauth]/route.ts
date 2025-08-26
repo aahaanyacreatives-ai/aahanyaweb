@@ -1,4 +1,4 @@
-// app/api/auth/[...nextauth]/route.ts - COMPLETE WORKING VERSION
+// app/api/auth/[...nextauth]/route.ts - FIXED FOR PRODUCTION
 import NextAuth, { type AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
@@ -15,8 +15,8 @@ function isValidRole(role: any): role is "admin" | "user" {
 console.log("[DEBUG] NextAuth route loaded at:", new Date().toISOString());
 console.log("[DEBUG] Environment check:");
 console.log("- NEXTAUTH_SECRET:", process.env.NEXTAUTH_SECRET ? "✓ Present" : "✗ Missing");
+console.log("- NEXTAUTH_URL:", process.env.NEXTAUTH_URL || "Not set");
 console.log("- GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? "✓ Present" : "✗ Missing");
-console.log("- AUTH_FIREBASE_PROJECT_ID:", process.env.AUTH_FIREBASE_PROJECT_ID ? "✓ Present" : "✗ Missing");
 
 const authConfig: AuthOptions = {
   providers: [
@@ -140,6 +140,13 @@ const authConfig: AuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code"
+        }
+      }
     }),
   ],
 
@@ -193,11 +200,40 @@ const authConfig: AuthOptions = {
         console.error("[DEBUG] SignIn callback error:", error);
         return false;
       }
+    },
+
+    // 🔥 CRITICAL FIX: Add redirect callback for production
+    async redirect({ url, baseUrl }) {
+      const productionUrl = process.env.NEXTAUTH_URL || "https://www.aahaanyacreatives.in";
+      
+      console.log('[DEBUG] Redirect callback - URL:', url, 'BaseURL:', baseUrl, 'Production URL:', productionUrl);
+      
+      // If URL is relative, use production URL
+      if (url.startsWith("/")) {
+        const redirectUrl = `${productionUrl}${url}`;
+        console.log('[DEBUG] Relative URL redirect to:', redirectUrl);
+        return redirectUrl;
+      }
+      
+      // If URL matches the base URL, allow it
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+      
+      // If URL matches production URL, allow it
+      if (url.startsWith(productionUrl)) {
+        return url;
+      }
+      
+      // For any other URL, redirect to production
+      console.log('[DEBUG] Default redirect to production URL');
+      return productionUrl;
     }
   },
 
   pages: {
     signIn: '/login',
+    error: '/login',
   },
   
   session: { 
@@ -210,64 +246,4 @@ const authConfig: AuthOptions = {
 
 const handler = NextAuth(authConfig);
 
-// Debug wrapper
-const debugHandler = async (req: Request, context: any) => {
-  const timestamp = new Date().toISOString();
-  const url = new URL(req.url);
-  
-  console.log(`[DEBUG ${timestamp}] NextAuth request - Method: ${req.method}, Path: ${url.pathname}`);
-
-  try {
-    const response = await handler(req, context);
-    console.log(`[DEBUG ${timestamp}] NextAuth response - Status: ${response.status}`);
-    return response;
-  } catch (error) {
-    console.error(`[DEBUG ${timestamp}] NextAuth handler error:`, error);
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
-};
-
-// Custom handler wrapper for Coolify
-const coolifyHandler = async (req: Request, context: any) => {
-  try {
-    // Ensure correct URL handling for Coolify's proxy
-    const url = new URL(req.url);
-    const coolifyUrl = process.env.NEXTAUTH_URL;
-    if (coolifyUrl) {
-      // Rewrite the request URL to match the Coolify domain
-      const newUrl = new URL(url.pathname + url.search, coolifyUrl);
-      req = new Request(newUrl, req);
-    }
-
-    const timestamp = new Date().toISOString();
-    console.log(`[DEBUG ${timestamp}] Auth request:`, {
-      method: req.method,
-      url: req.url,
-      headers: Object.fromEntries(req.headers),
-    });
-
-    const response = await debugHandler(req, context);
-    
-    // Add CORS headers for Coolify
-    const headers = new Headers(response.headers);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-    headers.set('Access-Control-Allow-Origin', process.env.NEXTAUTH_URL || 'https://www.aahaanyacreatives.in');
-    
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
-  } catch (error) {
-    console.error('Coolify handler error:', error);
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
-  }
-};
-
-export { coolifyHandler as GET, coolifyHandler as POST };
+export { handler as GET, handler as POST };
