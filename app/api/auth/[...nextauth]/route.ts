@@ -230,4 +230,44 @@ const debugHandler = async (req: Request, context: any) => {
   }
 };
 
-export { debugHandler as GET, debugHandler as POST };
+// Custom handler wrapper for Coolify
+const coolifyHandler = async (req: Request, context: any) => {
+  try {
+    // Ensure correct URL handling for Coolify's proxy
+    const url = new URL(req.url);
+    const coolifyUrl = process.env.NEXTAUTH_URL;
+    if (coolifyUrl) {
+      // Rewrite the request URL to match the Coolify domain
+      const newUrl = new URL(url.pathname + url.search, coolifyUrl);
+      req = new Request(newUrl, req);
+    }
+
+    const timestamp = new Date().toISOString();
+    console.log(`[DEBUG ${timestamp}] Auth request:`, {
+      method: req.method,
+      url: req.url,
+      headers: Object.fromEntries(req.headers),
+    });
+
+    const response = await debugHandler(req, context);
+    
+    // Add CORS headers for Coolify
+    const headers = new Headers(response.headers);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set('Access-Control-Allow-Origin', process.env.NEXTAUTH_URL || 'https://www.aahaanyacreatives.in');
+    
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  } catch (error) {
+    console.error('Coolify handler error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+};
+
+export { coolifyHandler as GET, coolifyHandler as POST };
