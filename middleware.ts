@@ -9,10 +9,16 @@ export default withAuth(
     
     console.log(`[DEBUG ${timestamp}] Middleware - Path: ${path}, Token:`, JSON.stringify(token));
 
+    // Skip auth check for callback routes
+    if (path.startsWith('/api/auth/callback') || path.startsWith('/auth/callback')) {
+      console.log(`[DEBUG ${timestamp}] Allowing callback URL:`, path);
+      return NextResponse.next();
+    }
+
     // No token means not authenticated
     if (!token) {
       console.log(`[DEBUG ${timestamp}] No token - Redirecting to /login`);
-      const loginUrl = new URL("/login", req.url);
+      const loginUrl = new URL("/login", req.nextUrl.origin);
       loginUrl.searchParams.set("callbackUrl", req.url);
       return NextResponse.redirect(loginUrl);
     }

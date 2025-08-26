@@ -86,20 +86,23 @@ export function LoginForm() {
   };
 
   const handleGoogleLogin = async () => {
-  setLoading(true);
-  try {
-    // ✅ Remove redirect: false for Google - let NextAuth handle it
-    await signIn("google"); // This will auto-redirect
-  } catch (error) {
-    setLoading(false);
-    console.error("[DEBUG] Google login error:", error);
-    toast({
-      title: "Google Login Error", 
-      description: "Failed to login with Google.",
-      variant: "destructive",
-    });
-  }
-};
+    setLoading(true);
+    try {
+      const currentUrl = window.location.origin;
+      await signIn("google", { 
+        callbackUrl: currentUrl,
+        redirect: true
+      });
+    } catch (error) {
+      setLoading(false);
+      console.error("[DEBUG] Google login error:", error);
+      toast({
+        title: "Google Login Error", 
+        description: "Failed to login with Google.",
+        variant: "destructive",
+      });
+    }
+  };
 
 
   // Show loading spinner while session is loading
