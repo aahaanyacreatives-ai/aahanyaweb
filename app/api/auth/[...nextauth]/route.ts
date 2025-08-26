@@ -18,6 +18,13 @@ console.log("- NEXTAUTH_SECRET:", process.env.NEXTAUTH_SECRET ? "✓ Present" : 
 console.log("- NEXTAUTH_URL:", process.env.NEXTAUTH_URL || "Not set");
 console.log("- GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? "✓ Present" : "✗ Missing");
 
+// DEBUG: Check what URLs NextAuth is actually using
+console.log("[DEBUG] Current environment values:");
+console.log("- NODE_ENV:", process.env.NODE_ENV);
+console.log("- NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
+console.log("- VERCEL_URL:", process.env.VERCEL_URL);
+console.log("- Request headers will be logged per request");
+
 const authConfig: AuthOptions = {
   providers: [
     CredentialsProvider({
