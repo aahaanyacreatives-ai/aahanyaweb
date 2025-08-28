@@ -9,46 +9,73 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: process.env.NEXTAUTH_URL || 'https://www.aahaanyacreatives.in',
-          },
-          {
-            key: 'Access-Control-Allow-Credentials',
-            value: 'true',
-          },
-          {
-            key: 'Access-Control-Allow-Methods',
-            value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
-          },
-          {
-            key: 'Access-Control-Allow-Headers',
-            value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version',
-          },
-        ],
-      },
-    ];
-  },
-  // Trust the Coolify proxy
   poweredByHeader: false,
-  env: {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'https://www.aahaanyacreatives.in',
-    NEXTAUTH_SITE_URL: 'https://www.aahaanyacreatives.in',
+  
+  // ✅ ENVIRONMENT-AWARE HEADERS
+  async headers() {
+    // Only apply CORS headers in production
+    if (process.env.NODE_ENV === 'production') {
+      return [
+        {
+          source: '/:path*',
+          headers: [
+            {
+              key: 'Access-Control-Allow-Origin',
+              value: 'https://www.aahaanyacreatives.in',
+            },
+            {
+              key: 'Access-Control-Allow-Credentials',
+              value: 'true',
+            },
+            {
+              key: 'Access-Control-Allow-Methods',
+              value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
+            },
+            {
+              key: 'Access-Control-Allow-Headers',
+              value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version',
+            },
+          ],
+        },
+      ];
+    }
+    // No headers in development - keeps it clean
+    return [];
   },
-  // Rewrite auth callbacks
-  async rewrites() {
-    return [
-      {
-        source: '/api/auth/:path*',
-        destination: 'https://www.aahaanyacreatives.in/api/auth/:path*'
-      }
-    ]
+
+  // ✅ ENVIRONMENT-AWARE ENV VARIABLES
+  env: {
+    NEXTAUTH_URL: process.env.NODE_ENV === 'production' 
+      ? (process.env.NEXTAUTH_URL || 'https://www.aahaanyacreatives.in')
+      : 'http://localhost:3000',
+    NEXTAUTH_SITE_URL: process.env.NODE_ENV === 'production'
+      ? 'https://www.aahaanyacreatives.in'
+      : 'http://localhost:3000',
+  },
+
+  // ✅ REMOVED PROBLEMATIC REWRITES
+  // The rewrites that were causing auth requests to proxy to production
+  // are completely removed for clean development experience
+  
+  // ✅ OPTIONAL: Add production-only redirects if needed
+  async redirects() {
+    if (process.env.NODE_ENV === 'production') {
+      return [
+        {
+          source: '/admin',
+          destination: '/admin/dashboard',
+          permanent: false,
+        },
+      ];
+    }
+    return [];
+  },
+
+  // ✅ EXPERIMENTAL FEATURES (optional)
+  experimental: {
+    // Enable if you're using Server Actions
+    serverActions: true,
   },
 }
 
-export default nextConfig
+export default nextConfig;
