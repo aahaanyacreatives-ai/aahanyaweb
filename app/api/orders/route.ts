@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDB } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
 import { handleFirebaseError } from '@/lib/firebase-utils';
+import { updateAdminStats } from '@/lib/admin-stats';
 import crypto from 'crypto';
 
 interface CartItem {
@@ -280,11 +281,17 @@ export async function PATCH(req: NextRequest) {
       await orderRef.update(updateData);
       console.log('[DEBUG] Order payment verified and updated:', orderId);
 
-      // Update admin statistics
-      const { updateAdminStats } = require('@/lib/admin-stats');
-      if (orderData && orderData.totalAmount) {
-        await updateAdminStats(orderData.totalAmount);
-        console.log('[DEBUG] Admin statistics updated for order:', orderId);
+      try {
+        // Update admin statistics
+        if (orderData && typeof orderData.totalAmount === 'number') {
+          await updateAdminStats(orderData.totalAmount);
+          console.log('[DEBUG] Admin statistics updated for order:', orderId);
+        } else {
+          console.warn('[DEBUG] Order data or total amount missing, skipping stats update');
+        }
+      } catch (statsError) {
+        console.error('[DEBUG] Failed to update admin stats:', statsError);
+        // Continue execution - don't fail the order update if stats fail
       }
 
       // Get updated order data
