@@ -12,18 +12,24 @@ export async function withAuth(
   try {
     console.log(`[DEBUG ${timestamp}] withAuth called for path: ${req.url}`);
 
+    if (!process.env.NEXTAUTH_SECRET) {
+      console.error(`[DEBUG ${timestamp}] NEXTAUTH_SECRET is not configured`);
+      return errorResponse('Server configuration error', 500);
+    }
+
     // ✅ FIXED: Use getToken instead of getServerSession for API routes
     const token = await getToken({ 
       req, 
       secret: process.env.NEXTAUTH_SECRET 
     });
 
-    console.log(`[DEBUG ${timestamp}] Token extracted:`, token ? 'Token found' : 'No token');
+    console.log(`[DEBUG ${timestamp}] Token extracted:`, JSON.stringify({
+      found: !!token,
+      role: token?.role,
+      email: token?.email,
+      sub: token?.sub,
+    }));
     
-    if (token) {
-      console.log(`[DEBUG ${timestamp}] Token details: id=${token.id}, email=${token.email}, role=${token.role}`);
-    }
-
     if (!token) {
       console.error(`[DEBUG ${timestamp}] No token found`);
       return errorResponse('Unauthorized - Please log in', 401);
