@@ -1,9 +1,135 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDB } from '@/lib/firebaseAdmin';
+import { adminDB, serverTimestamp } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
 import { handleFirebaseError } from '@/lib/firebase-utils';
 
 const ORDERS = adminDB.collection('orders');
+
+// GET: Get all orders (requires admin authentication)
+// PATCH: Update order status (mark as shipped/delivered)
+export async function PATCH(req: NextRequest) {
+  return withAuth(req, async (req: NextRequest, token: any) => {
+    try {
+      const timestamp = new Date().toISOString();
+      
+      // Verify admin role
+      if (token.role !== 'admin') {
+        console.log(`[DEBUG ${timestamp}] Access denied - User role:`, token.role);
+        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+      }
+
+      const { orderId, action } = await req.json();
+
+      if (!orderId) {
+        return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
+      }
+
+      if (!['shipped', 'delivered'].includes(action)) {
+        return NextResponse.json({ error: 'Invalid action. Must be shipped or delivered' }, { status: 400 });
+      }
+
+      // Get order
+      const orderRef = ORDERS.doc(orderId);
+      const orderSnap = await orderRef.get();
+      
+      if (!orderSnap.exists) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
+      const now = serverTimestamp();
+      const updateData: any = {
+        status: action,
+        updatedAt: now
+      };
+
+      if (action === 'shipped') {
+        updateData.shippedAt = now;
+      } else if (action === 'delivered') {
+        updateData.deliveredAt = now;
+      }
+
+      await orderRef.update(updateData);
+
+      console.log(`[DEBUG ${timestamp}] Order ${orderId} marked as ${action}`);
+
+      // Get updated order data
+      const updatedOrderSnap = await orderRef.get();
+      const updatedOrder = updatedOrderSnap.data();
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Order marked as ${action} successfully`,
+        order: {
+          id: orderId,
+          ...updatedOrder
+        }
+      });
+
+    } catch (error) {
+      console.error('[DEBUG] Admin Orders PATCH error:', error);
+      if (error && typeof error === 'object' && 'code' in error) {
+        return handleFirebaseError(error);
+      }
+      return NextResponse.json({ 
+        error: `Failed to update order status`,
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      }, { status: 500 });
+    }
+  }, { requireAdmin: true });
+}
+
+// DELETE: Delete order (admin only)
+export async function DELETE(req: NextRequest) {
+  return withAuth(req, async (req: NextRequest, token: any) => {
+    try {
+      const timestamp = new Date().toISOString();
+      
+      // Verify admin role
+      if (token.role !== 'admin') {
+        console.log(`[DEBUG ${timestamp}] Access denied - User role:`, token.role);
+        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+      }
+
+      const { searchParams } = new URL(req.url);
+      const orderId = searchParams.get('orderId');
+
+      if (!orderId) {
+        return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
+      }
+
+      // Get order to verify it exists
+      const orderRef = ORDERS.doc(orderId);
+      const orderSnap = await orderRef.get();
+      
+      if (!orderSnap.exists) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
+      // Delete the order
+      await orderRef.delete();
+
+      console.log(`[DEBUG ${timestamp}] Order ${orderId} deleted by admin`);
+
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Order deleted successfully',
+        orderId: orderId
+      });
+
+    } catch (error) {
+      console.error('[DEBUG] Admin Orders DELETE error:', error);
+      if (error && typeof error === 'object' && 'code' in error) {
+        return handleFirebaseError(error);
+      }
+      return NextResponse.json({ 
+        error: 'Failed to delete order',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      }, { status: 500 });
+    }
+  }, { requireAdmin: true });
+}
 
 // GET: Get all orders (requires admin authentication)
 export async function GET(req: NextRequest) {
@@ -20,10 +146,17 @@ export async function GET(req: NextRequest) {
 
       console.log(`[DEBUG ${timestamp}] GET /api/admin/orders called by admin`);
       
-      // Get orders, fallback to createdAt if orderDate is not available
-      const snap = await ORDERS
-        .orderBy('createdAt', 'desc')
-        .get();
+      // Get orders with shipped status filter if specified
+      const { searchParams } = new URL(req.url);
+      const showShippedOnly = searchParams.get('shipped') === 'true';
+      
+      let query = ORDERS.orderBy('createdAt', 'desc');
+      
+      if (showShippedOnly) {
+        query = query.where('status', '==', 'shipped');
+      }
+      
+      const snap = await query.get();
       
       console.log(`[DEBUG ${timestamp}] Orders found:`, snap.size);
       
@@ -68,7 +201,13 @@ export async function GET(req: NextRequest) {
       // Log the response for debugging
       console.log(`[DEBUG ${timestamp}] Sending response with ${orders.length} orders`);
 
-      return NextResponse.json(orders);
+      return NextResponse.json({
+        orders,
+        timestamp: new Date().toISOString(),
+        total: orders.length,
+        shipped: orders.filter(o => o.status === 'shipped').length,
+        pending: orders.filter(o => o.status === 'pending').length
+      });
     } catch (error) {
       console.error('[DEBUG] Admin Orders GET error:', error);
       

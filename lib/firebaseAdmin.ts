@@ -1,6 +1,6 @@
 // lib/firebaseAdmin.ts - SERVER-SIDE FIREBASE ADMIN INIT (FIXED WITH DEBUGGING)
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';  // If you need Auth
 
 // Service account from env (no hardcode)
@@ -51,6 +51,11 @@ if (!getApps().length) {
   console.log('📡 Using existing Firebase Admin app');
 }
 
-// Export instances
+// Export instances and utilities
 export const adminDB = getFirestore();
 export const adminAuth = getAuth();  // Optional
+
+// Export Firestore utilities
+export const serverTimestamp = () => Timestamp.now();
+export const fromDate = (date: Date) => Timestamp.fromDate(date);
+export { Timestamp };
