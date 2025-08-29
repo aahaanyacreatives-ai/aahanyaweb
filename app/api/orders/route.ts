@@ -117,13 +117,12 @@ export async function POST(req: NextRequest) {
         await adminDB.runTransaction(async (transaction) => {
           const items: OrderItem[] = [];
           let totalAmount = 0;
-          const stockUpdates: { ref: any; currentStock: number; newStock: number; productName: string }[] = [];
 
-          // 1. First, get all cart items and validate products in the transaction
+          // 1. Get all cart items and create order items
           for (const cartDoc of cartSnap.docs) {
             const cartData = cartDoc.data();
             
-            // Get product within transaction to ensure consistent read
+            // Get product details
             const productRef = PRODUCTS.doc(cartData.productId);
             const productSnap = await transaction.get(productRef);
             
@@ -132,32 +131,13 @@ export async function POST(req: NextRequest) {
             }
             
             const productData = productSnap.data()!;
-            
-            // 🔥 CRITICAL: Check stock atomically within transaction
-            const currentStock = productData.stock;
-            const requestedQuantity = cartData.quantity || 1;
-            
-            // If product tracks stock, validate availability
-            if (currentStock !== undefined) {
-              if (currentStock < requestedQuantity) {
-                throw new Error(`Insufficient stock for "${productData.name}". Available: ${currentStock}, Requested: ${requestedQuantity}`);
-              }
-              
-              // Prepare stock update
-              stockUpdates.push({
-                ref: productRef,
-                currentStock,
-                newStock: currentStock - requestedQuantity,
-                productName: productData.name
-              });
-            }
 
             const orderItem: OrderItem = {
               productId: cartData.productId,
               name: productData.name || cartData.name || 'Unknown Product',
               image: cartData.image || productData.images?.[0] || null,
               price: productData.price || cartData.price || 0,
-              quantity: requestedQuantity,
+              quantity: cartData.quantity || 1,
               customSize: cartData.customSize || null,
               customImage: cartData.customImage || null
             };
@@ -181,23 +161,15 @@ export async function POST(req: NextRequest) {
             id: orderRef.id
           };
 
-          // 3. Atomically: Create order + Update stock + Clear cart
+          // 3. Create order and clear cart
           transaction.set(orderRef, orderData);
-          
-          // Update product stocks
-          stockUpdates.forEach(({ ref, newStock }) => {
-            transaction.update(ref, {
-              stock: newStock,
-              updatedAt: new Date()
-            });
-          });
           
           // Clear cart items
           cartSnap.docs.forEach(doc => {
             transaction.delete(doc.ref);
           });
 
-          console.log('[DEBUG] Transaction completed successfully. Stock updates:', stockUpdates.map(u => `${u.productName}: ${u.currentStock} → ${u.newStock}`));
+          console.log('[DEBUG] Order created successfully');;
         });
 
         console.log('[DEBUG] Order created with ID:', orderRef.id);
