@@ -10,7 +10,8 @@ export async function GET(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
       // Verify admin role
-      if (!token.isAdmin) {
+      if (token.role !== 'admin') {
+        console.log('[DEBUG] Access denied - User role:', token.role);
         return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
       }
 

@@ -27,10 +27,24 @@ export default withAuth(
     console.log(`[DEBUG ${timestamp}] User role from token:`, role);
 
     // Admin routes protection
-    if (path.startsWith("/admin")) {
+    if (path.startsWith("/admin") || path.startsWith("/api/admin")) {
       console.log(`[DEBUG ${timestamp}] Admin route check - User role: ${role}`);
       if (role !== "admin") {
         console.log(`[DEBUG ${timestamp}] Non-admin access denied`);
+        
+        // If it's an API route, return 403 response
+        if (path.startsWith('/api/')) {
+          console.log(`[DEBUG ${timestamp}] Returning 403 for API route`);
+          return new NextResponse(
+            JSON.stringify({ error: 'Unauthorized: Admin access required' }),
+            { 
+              status: 403,
+              headers: { 'content-type': 'application/json' }
+            }
+          );
+        }
+        
+        // For regular routes, redirect to home
         return NextResponse.redirect(new URL("/", req.url));
       }
       
@@ -56,5 +70,6 @@ export const config = {
   matcher: [
     "/admin/:path*",
     "/my-orders/:path*",
+    "/api/admin/:path*"  // Added protection for admin API routes
   ]
 };
