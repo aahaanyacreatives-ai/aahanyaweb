@@ -73,7 +73,7 @@ export default function AdminOrdersPage() {
   // Handle mark as shipped
   const handleShipOrder = async (order: Order) => {
     try {
-      const res = await fetch(`/api/orders/${order.id}`, {
+      const res = await fetch(`/api/admin/orders/${order.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -82,7 +82,11 @@ export default function AdminOrdersPage() {
         })
       });
 
-      if (!res.ok) throw new Error('Failed to update order');
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update order');
+      }
 
       // Update local state
       setOrders(current => 
@@ -98,9 +102,10 @@ export default function AdminOrdersPage() {
       });
 
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update order status';
       toast({
         title: "Error",
-        description: "Failed to update order status",
+        description: message,
         variant: "destructive",
       });
     }
@@ -109,11 +114,15 @@ export default function AdminOrdersPage() {
   // Handle delete order
   const handleDeleteOrder = async (order: Order) => {
     try {
-      const res = await fetch(`/api/orders/${order.id}`, {
+      const res = await fetch(`/api/admin/orders/${order.id}`, {
         method: 'DELETE'
       });
 
-      if (!res.ok) throw new Error('Failed to delete order');
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete order');
+      }
 
       // Update local state
       setOrders(current => current.filter(o => o.id !== order.id));
@@ -125,9 +134,10 @@ export default function AdminOrdersPage() {
       });
 
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete order';
       toast({
         title: "Error",
-        description: "Failed to delete order",
+        description: message,
         variant: "destructive",
       });
     }
@@ -137,15 +147,27 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     async function fetchOrders() {
       try {
-        const res = await fetch('/api/orders');
+        setLoading(true);
+        const res = await fetch('/api/admin/orders');
         if (!res.ok) {
           throw new Error(`Error: ${res.status}`);
         }
         const data = await res.json();
-        setOrders(data || []);
+        if (Array.isArray(data)) {
+          setOrders(data);
+        } else if (data.error) {
+          throw new Error(data.error);
+        } else {
+          throw new Error('Invalid response format');
+        }
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
         setError(errorMessage);
+        toast({
+          title: "Error fetching orders",
+          description: errorMessage,
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
@@ -155,7 +177,7 @@ export default function AdminOrdersPage() {
     // Auto-refresh every 30 seconds
     const interval = setInterval(fetchOrders, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [toast]);
 
   // Sort orders
   const sortedOrders = [...orders].sort((a, b) => {
