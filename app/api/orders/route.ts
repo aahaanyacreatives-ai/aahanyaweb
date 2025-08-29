@@ -280,6 +280,13 @@ export async function PATCH(req: NextRequest) {
       await orderRef.update(updateData);
       console.log('[DEBUG] Order payment verified and updated:', orderId);
 
+      // Update admin statistics
+      const { updateAdminStats } = require('@/lib/admin-stats');
+      if (orderData && orderData.totalAmount) {
+        await updateAdminStats(orderData.totalAmount);
+        console.log('[DEBUG] Admin statistics updated for order:', orderId);
+      }
+
       // Get updated order data
       const updatedOrderSnap = await orderRef.get();
       const updatedOrder = updatedOrderSnap.data();
