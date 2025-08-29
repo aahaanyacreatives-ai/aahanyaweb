@@ -7,7 +7,20 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ShippingInfo {
   name?: string;
@@ -31,10 +44,13 @@ interface Order {
   userId: string;
   items: OrderItem[];
   totalAmount: number;
-  status: 'pending' | 'completed' | 'cancelled';
+  status: 'pending' | 'shipped' | 'delivered' | 'cancelled';
   orderDate: string;
+  shippedAt?: string;
+  deliveredAt?: string;
   paymentStatus: 'pending' | 'success' | 'failed';
   shippingInfo: ShippingInfo;
+  trackingId?: string;
 }
 
 export default function AdminOrdersPage() {
@@ -42,6 +58,8 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [showShipped, setShowShipped] = useState(false);
   const [sortConfig, setSortConfig] = useState<{
     key: keyof Order;
     direction: 'asc' | 'desc';
@@ -49,8 +67,73 @@ export default function AdminOrdersPage() {
     key: 'orderDate',
     direction: 'desc'
   });
+  
+  const { toast } = useToast();
 
-  // Fetch orders with auto-refresh every 30 seconds
+  // Handle mark as shipped
+  const handleShipOrder = async (order: Order) => {
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'shipped',
+          shippedAt: new Date().toISOString()
+        })
+      });
+
+      if (!res.ok) throw new Error('Failed to update order');
+
+      // Update local state
+      setOrders(current => 
+        current.map(o => o.id === order.id 
+          ? { ...o, status: 'shipped', shippedAt: new Date().toISOString() }
+          : o
+        )
+      );
+
+      toast({
+        title: "Order Shipped",
+        description: `Order ${order.id} has been marked as shipped`,
+      });
+
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update order status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle delete order
+  const handleDeleteOrder = async (order: Order) => {
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: 'DELETE'
+      });
+
+      if (!res.ok) throw new Error('Failed to delete order');
+
+      // Update local state
+      setOrders(current => current.filter(o => o.id !== order.id));
+      setOrderToDelete(null);
+
+      toast({
+        title: "Order Deleted",
+        description: `Order ${order.id} has been deleted`,
+      });
+
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete order",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Fetch orders with auto-refresh
   useEffect(() => {
     async function fetchOrders() {
       try {
@@ -128,10 +211,24 @@ export default function AdminOrdersPage() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Orders Management</h1>
-        <div className="text-sm text-gray-500">
-          Total Orders: {orders.length} | 
-          Completed: {orders.filter(o => o.status === 'completed').length} | 
-          Pending: {orders.filter(o => o.status === 'pending').length}
+        <div className="flex items-center gap-4">
+          <Button
+            variant={showShipped ? "outline" : "default"}
+            onClick={() => setShowShipped(false)}
+          >
+            Active Orders
+          </Button>
+          <Button
+            variant={showShipped ? "default" : "outline"}
+            onClick={() => setShowShipped(true)}
+          >
+            Shipped Orders
+          </Button>
+          <div className="text-sm text-gray-500 ml-4">
+            Total: {orders.length} | 
+            Shipped: {orders.filter(o => o.status === 'shipped').length} | 
+            Pending: {orders.filter(o => o.status === 'pending').length}
+          </div>
         </div>
       </div>
 
@@ -157,7 +254,9 @@ export default function AdminOrdersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedOrders.map((order) => (
+            {sortedOrders
+              .filter(order => showShipped ? order.status === 'shipped' : order.status === 'pending')
+              .map((order) => (
               <TableRow key={order.id} className="hover:bg-gray-50">
                 <TableCell className="font-mono text-sm">{order.id}</TableCell>
                 <TableCell>
@@ -180,22 +279,48 @@ export default function AdminOrdersPage() {
                 <TableCell>₹{order.totalAmount.toFixed(2)}</TableCell>
                 <TableCell>
                   <span className={`px-2 py-1 rounded-full text-xs ${
-                    order.status === 'completed' ? 'bg-green-100 text-green-800' :
+                    order.status === 'shipped' ? 'bg-green-100 text-green-800' :
                     order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
+                    order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                    'bg-blue-100 text-blue-800'
                   }`}>
                     {order.status}
+                    {order.shippedAt && (
+                      <span className="block text-[10px] mt-1">
+                        Shipped: {formatDate(order.shippedAt)}
+                      </span>
+                    )}
                   </span>
                 </TableCell>
                 <TableCell>{formatDate(order.orderDate)}</TableCell>
                 <TableCell>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setSelectedOrder(order)}
-                  >
-                    View Details
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setSelectedOrder(order)}
+                    >
+                      View
+                    </Button>
+                    {order.status === 'pending' && (
+                      <>
+                        <Button 
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleShipOrder(order)}
+                        >
+                          Ship
+                        </Button>
+                        <Button 
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setOrderToDelete(order)}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -220,6 +345,9 @@ export default function AdminOrdersPage() {
                   <p>Status: {selectedOrder.status}</p>
                   <p>Payment Status: {selectedOrder.paymentStatus}</p>
                   <p>Date: {formatDate(selectedOrder.orderDate)}</p>
+                  {selectedOrder.shippedAt && (
+                    <p>Shipped Date: {formatDate(selectedOrder.shippedAt)}</p>
+                  )}
                   <p>Total Amount: ₹{selectedOrder.totalAmount.toFixed(2)}</p>
                 </div>
                 
@@ -268,10 +396,55 @@ export default function AdminOrdersPage() {
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Action Buttons */}
+              {selectedOrder.status === 'pending' && (
+                <DialogFooter className="gap-2">
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      handleShipOrder(selectedOrder);
+                      setSelectedOrder(null);
+                    }}
+                  >
+                    Mark as Shipped
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setSelectedOrder(null);
+                      setOrderToDelete(selectedOrder);
+                    }}
+                  >
+                    Delete Order
+                  </Button>
+                </DialogFooter>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!orderToDelete} onOpenChange={() => setOrderToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Order</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete order {orderToDelete?.id}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => orderToDelete && handleDeleteOrder(orderToDelete)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
