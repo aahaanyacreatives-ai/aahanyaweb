@@ -1,4 +1,4 @@
-// app/api/orders/route.ts - COMPLETE PERMANENT SOLUTION
+// app/api/orders/route.ts - FIXED VERSION WITH ATOMIC STOCK MANAGEMENT
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDB } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
@@ -46,9 +46,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'User ID not found in token' }, { status: 400 });
       }
       
-      // ✅ PERMANENT: This query requires composite index (userId + orderDate)
-      // Index must be created in Firebase Console: Firestore > Indexes > Composite
-      // Fields: userId (Ascending), orderDate (Descending)
       const snap = await ORDERS.where('userId', '==', userId)
                               .orderBy('orderDate', 'desc')
                               .get();
@@ -76,7 +73,6 @@ export async function GET(req: NextRequest) {
     } catch (error) {
       console.error('[DEBUG] Orders GET error:', error);
       
-      // Handle specific Firestore index error
       if (error && typeof error === 'object' && 'code' in error && error.code === 9) {
         return NextResponse.json({ 
           error: 'Database index required. Please create composite index for orders collection.',
@@ -93,7 +89,7 @@ export async function GET(req: NextRequest) {
   });
 }
 
-// POST: Create new order (requires authentication)
+// POST: Create new order (requires authentication) - FIXED VERSION
 export async function POST(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
@@ -113,101 +109,118 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
       }
 
-      // Process cart items and validate products
-      const items: OrderItem[] = [];
-      let totalAmount = 0;
-
-      for (const cartDoc of cartSnap.docs) {
-        const cartData = cartDoc.data();
-        
-        // Validate product exists and has stock
-        const productRef = PRODUCTS.doc(cartData.productId);
-        const productSnap = await productRef.get();
-        
-        if (!productSnap.exists) {
-          return NextResponse.json({
-            error: 'Product not found',
-            details: `Product ${cartData.productId} no longer exists`
-          }, { status: 404 });
-        }
-        
-        const productData = productSnap.data()!;
-        
-        // Check stock if product has stock tracking
-        if (productData.stock !== undefined && productData.stock < cartData.quantity) {
-          return NextResponse.json({
-            error: 'Insufficient stock',
-            details: `Not enough stock for ${productData.name}. Available: ${productData.stock}, Requested: ${cartData.quantity}`
-          }, { status: 400 });
-        }
-
-        const orderItem: OrderItem = {
-          productId: cartData.productId,
-          name: productData.name || cartData.name || 'Unknown Product',
-          image: cartData.image || productData.images?.[0] || null,
-          price: productData.price || cartData.price || 0,
-          quantity: cartData.quantity || 1,
-          customSize: cartData.customSize || null,
-          customImage: cartData.customImage || null
-        };
-
-        items.push(orderItem);
-        totalAmount += orderItem.price * orderItem.quantity;
-      }
-
-      // Create order data
-      const orderData = {
-        userId,
-        items,
-        totalAmount,
-        status: 'pending' as const,
-        orderDate: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        paymentDetails: {},
-        paymentStatus: 'pending' as const,
-        shippingInfo: shippingInfo || {}
-      };
-
-      // Use transaction to ensure atomicity
+      // 🔥 CRITICAL FIX: Use transaction to atomically check stock AND create order
       const orderRef = ORDERS.doc();
+      let orderData: any;
       
-      await adminDB.runTransaction(async (transaction) => {
-        // Create order
-        transaction.set(orderRef, { ...orderData, id: orderRef.id });
-        
-        // Update product stock if applicable
-        for (const item of items) {
-          const productRef = PRODUCTS.doc(item.productId);
-          const productSnap = await transaction.get(productRef);
-          
-          if (productSnap.exists) {
+      try {
+        await adminDB.runTransaction(async (transaction) => {
+          const items: OrderItem[] = [];
+          let totalAmount = 0;
+          const stockUpdates: { ref: any; currentStock: number; newStock: number; productName: string }[] = [];
+
+          // 1. First, get all cart items and validate products in the transaction
+          for (const cartDoc of cartSnap.docs) {
+            const cartData = cartDoc.data();
+            
+            // Get product within transaction to ensure consistent read
+            const productRef = PRODUCTS.doc(cartData.productId);
+            const productSnap = await transaction.get(productRef);
+            
+            if (!productSnap.exists) {
+              throw new Error(`Product ${cartData.productId} no longer exists`);
+            }
+            
             const productData = productSnap.data()!;
-            if (productData.stock !== undefined) {
-              transaction.update(productRef, {
-                stock: productData.stock - item.quantity,
-                updatedAt: new Date()
+            
+            // 🔥 CRITICAL: Check stock atomically within transaction
+            const currentStock = productData.stock;
+            const requestedQuantity = cartData.quantity || 1;
+            
+            // If product tracks stock, validate availability
+            if (currentStock !== undefined) {
+              if (currentStock < requestedQuantity) {
+                throw new Error(`Insufficient stock for "${productData.name}". Available: ${currentStock}, Requested: ${requestedQuantity}`);
+              }
+              
+              // Prepare stock update
+              stockUpdates.push({
+                ref: productRef,
+                currentStock,
+                newStock: currentStock - requestedQuantity,
+                productName: productData.name
               });
             }
+
+            const orderItem: OrderItem = {
+              productId: cartData.productId,
+              name: productData.name || cartData.name || 'Unknown Product',
+              image: cartData.image || productData.images?.[0] || null,
+              price: productData.price || cartData.price || 0,
+              quantity: requestedQuantity,
+              customSize: cartData.customSize || null,
+              customImage: cartData.customImage || null
+            };
+
+            items.push(orderItem);
+            totalAmount += orderItem.price * orderItem.quantity;
           }
+
+          // 2. Create order data
+          orderData = {
+            userId,
+            items,
+            totalAmount,
+            status: 'pending' as const,
+            orderDate: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            paymentDetails: {},
+            paymentStatus: 'pending' as const,
+            shippingInfo: shippingInfo || {},
+            id: orderRef.id
+          };
+
+          // 3. Atomically: Create order + Update stock + Clear cart
+          transaction.set(orderRef, orderData);
+          
+          // Update product stocks
+          stockUpdates.forEach(({ ref, newStock }) => {
+            transaction.update(ref, {
+              stock: newStock,
+              updatedAt: new Date()
+            });
+          });
+          
+          // Clear cart items
+          cartSnap.docs.forEach(doc => {
+            transaction.delete(doc.ref);
+          });
+
+          console.log('[DEBUG] Transaction completed successfully. Stock updates:', stockUpdates.map(u => `${u.productName}: ${u.currentStock} → ${u.newStock}`));
+        });
+
+        console.log('[DEBUG] Order created with ID:', orderRef.id);
+
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Order created successfully',
+          order: orderData
+        }, { status: 201 });
+
+      } catch (transactionError) {
+        console.error('[DEBUG] Transaction failed:', transactionError);
+        
+        // Handle specific stock errors
+        if (transactionError instanceof Error && transactionError.message.includes('Insufficient stock')) {
+          return NextResponse.json({ 
+            error: 'Insufficient stock',
+            details: transactionError.message
+          }, { status: 400 });
         }
         
-        // Clear cart items
-        cartSnap.docs.forEach(doc => {
-          transaction.delete(doc.ref);
-        });
-      });
-
-      console.log('[DEBUG] Order created with ID:', orderRef.id);
-
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Order created successfully',
-        order: { 
-          id: orderRef.id, 
-          ...orderData 
-        }
-      }, { status: 201 });
+        throw transactionError; // Re-throw other errors
+      }
 
     } catch (error) {
       console.error('[DEBUG] Order creation error:', error);
