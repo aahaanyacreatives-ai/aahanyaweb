@@ -6,7 +6,7 @@ import { useState, useRef, useEffect } from "react"
 const IMAGES = [
   { src: "/bracelet-hero.jpg", alt: "brecelete" },
   { src: "/image-1.png", alt: "Silver Ankh Pendant" },
-  { src: "/watch.png", alt: "Golden Watch Bracelet" },
+  { src: "/neck.jpg", alt: "Golden Watch Bracelet" },
   { src: "/ring.jpg", alt: "Gold Ring with Flowers" },
 ]
 

@@ -7,8 +7,7 @@ export function ToastLoginAction() {
   return (
     <Button
       size="sm"
-      className="mt-2"
-      variant="outline"
+      className="mt-2 bg-rose-800 text-white hover:bg-rose-600 transition-colors font-semibold"
       onClick={() => router.push("/login")}
     >
       Login

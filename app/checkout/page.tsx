@@ -553,7 +553,7 @@ export default function CheckoutPage() {
               <Label htmlFor="city">City *</Label>
               <Input 
                 id="city" 
-                placeholder="Mumbai" 
+                
                 required 
                 value={city} 
                 onChange={(e) => setCity(e.target.value)} 
@@ -564,7 +564,7 @@ export default function CheckoutPage() {
               <Label htmlFor="state">State *</Label>
               <Input 
                 id="state" 
-                placeholder="Maharashtra" 
+                 
                 required 
                 value={state} 
                 onChange={(e) => setState(e.target.value)} 
@@ -588,7 +588,7 @@ export default function CheckoutPage() {
             <Input
               id="phone"
               type="tel"
-              placeholder="+91 9876543210"
+             
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
