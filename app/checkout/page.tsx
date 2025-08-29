@@ -10,10 +10,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { useCart } from "@/components/cart-provider"
 import { toast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
-import { useState, useEffect, useMemo, useTransition } from "react"  // Added useTransition
+import { useState, useEffect, useMemo } from "react"
 import { useSession } from "next-auth/react"
 import type { Coupon } from "@/lib/types"
-import { createOrder } from "@/app/actions/order"  // Added import for server action
 
 // Declare Razorpay type for TypeScript
 declare global {
@@ -52,8 +51,24 @@ interface RazorpayInstance {
   on: (eventName: string, callback: (response: any) => void) => void
 }
 
+// Define the Product type
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  images?: string[];
+}
+
+// Define the CartItem type
+interface CartItem {
+  product: Product;
+  quantity: number;
+  customSize?: string;
+  customImage?: string;
+}
+
 export default function CheckoutPage() {
-  const { cartItems, clearCart } = useCart()
+  const { cartItems, clearCart } = useCart() as { cartItems: CartItem[], clearCart: () => void }
   const { data: session, status } = useSession()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -68,10 +83,8 @@ export default function CheckoutPage() {
   const [city, setCity] = useState("")
   const [state, setState] = useState("")
   const [zip, setZip] = useState("")
-  const [phone, setPhone] = useState("") // Capture phone number
+  const [phone, setPhone] = useState("")
   const [notes, setNotes] = useState("")
-
-  const [isPending, startTransition] = useTransition()  // Added for server action handling
 
   const subtotal = useMemo(() => cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0), [cartItems])
   const shipping = 50.0
@@ -94,18 +107,24 @@ export default function CheckoutPage() {
   useEffect(() => {
     const script = document.createElement("script")
     script.src = "https://checkout.razorpay.com/v1/checkout.js"
-    script.onload = () => setRazorpayLoaded(true)
+    script.onload = () => {
+      console.log("Razorpay script loaded successfully")
+      setRazorpayLoaded(true)
+    }
     script.onerror = () => {
+      console.error("Failed to load Razorpay script")
       toast({
         title: "Payment Error",
-        description: "Failed to load Razorpay script. Please try again.",
+        description: "Failed to load payment gateway. Please refresh and try again.",
         variant: "destructive",
       })
     }
     document.body.appendChild(script)
 
     return () => {
-      document.body.removeChild(script)
+      if (document.body.contains(script)) {
+        document.body.removeChild(script)
+      }
     }
   }, [])
 
@@ -153,7 +172,15 @@ export default function CheckoutPage() {
     event.preventDefault()
     setLoading(true)
 
+    console.log("[DEBUG] Starting checkout process...")
+    console.log("[DEBUG] Session status:", status)
+    console.log("[DEBUG] User ID:", session?.user?.id)
+    console.log("[DEBUG] Cart items count:", cartItems.length)
+    console.log("[DEBUG] Total amount:", total)
+
+    // Authentication check
     if (status !== "authenticated" || !session?.user?.id) {
+      console.error("[DEBUG] User not authenticated")
       toast({
         title: "Login Required",
         description: "Please log in to place an order.",
@@ -164,17 +191,21 @@ export default function CheckoutPage() {
       return
     }
 
-    if (!razorpayLoaded) {
+    // Razorpay script check
+    if (!razorpayLoaded || !window.Razorpay) {
+      console.error("[DEBUG] Razorpay not loaded")
       toast({
         title: "Payment Error",
-        description: "Razorpay script not loaded yet. Please wait a moment and try again.",
+        description: "Payment gateway not ready. Please wait a moment and try again.",
         variant: "destructive",
       })
       setLoading(false)
       return
     }
 
+    // Cart validation
     if (cartItems.length === 0) {
+      console.error("[DEBUG] Cart is empty")
       toast({
         title: "Cart Empty",
         description: "Please add items to your cart before proceeding to checkout.",
@@ -184,8 +215,9 @@ export default function CheckoutPage() {
       return
     }
 
-    // Basic validation for shipping info
+    // Form validation
     if (!firstName || !lastName || !address || !city || !state || !zip || !phone) {
+      console.error("[DEBUG] Missing shipping information")
       toast({
         title: "Missing Information",
         description: "Please fill in all required shipping details.",
@@ -196,7 +228,9 @@ export default function CheckoutPage() {
     }
 
     try {
-      // 1. Create order on your backend
+      console.log("[DEBUG] Creating Razorpay order...")
+      
+      // 1. Create Razorpay order
       const orderResponse = await fetch("/api/razorpay/order", {
         method: "POST",
         headers: {
@@ -208,23 +242,35 @@ export default function CheckoutPage() {
         }),
       })
 
+      console.log("[DEBUG] Razorpay order response status:", orderResponse.status)
+
       if (!orderResponse.ok) {
         const errorData = await orderResponse.json()
-        throw new Error(errorData.error || "Failed to create Razorpay order.")
+        console.error("[DEBUG] Razorpay order creation failed:", errorData)
+        throw new Error(errorData.error || "Failed to create payment order.")
       }
 
-      const order = await orderResponse.json()
+      const razorpayOrder = await orderResponse.json()
+      console.log("[DEBUG] Razorpay order created:", razorpayOrder.id)
 
-      // 2. Configure Razorpay Checkout options
+      // 2. Configure and open Razorpay Checkout
       const options: RazorpayOptions = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "YOUR_RAZORPAY_KEY_ID",
-        amount: Math.round(order.amount).toString(),
-        currency: order.currency,
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
+        amount: Math.round(razorpayOrder.amount).toString(),
+        currency: razorpayOrder.currency,
         name: "Aahaanya Creatives",
         description: "Purchase from Aahaanya Creatives",
-        order_id: order.id,
+        order_id: razorpayOrder.id,
         handler: async (response: RazorpayResponse) => {
           try {
+            console.log("[DEBUG] Payment successful, starting verification...")
+            console.log("[DEBUG] Payment response:", {
+              payment_id: response.razorpay_payment_id,
+              order_id: response.razorpay_order_id,
+              signature: response.razorpay_signature?.substring(0, 10) + "..."
+            })
+
+            // Step 1: Verify payment
             const verifyResponse = await fetch("/api/razorpay/verify-payment", {
               method: "POST",
               headers: {
@@ -233,97 +279,148 @@ export default function CheckoutPage() {
               body: JSON.stringify(response),
             })
 
+            console.log("[DEBUG] Payment verification response status:", verifyResponse.status)
+
             if (!verifyResponse.ok) {
               const errorData = await verifyResponse.json()
+              console.error("[DEBUG] Payment verification failed:", errorData)
               throw new Error(errorData.error || "Payment verification failed.")
             }
 
-            if (appliedCoupon) {
-              await fetch("/api/coupons", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: appliedCoupon.id }),
-              })
+            const verifyResult = await verifyResponse.json()
+            console.log("[DEBUG] Payment verified successfully:", verifyResult)
+
+            // Step 2: Create order in database
+            const shippingInfo = {
+              firstName,
+              lastName,
+              address,
+              city,
+              state,
+              zip,
+              phone,
+              notes
             }
 
-            // Use server action for order creation
-            startTransition(async () => {
-              try {
-                const orderItems = cartItems.map((item) => ({
-                  productId: item.product.id,
-                  name: item.product.name,
-                  image: (item.product.images && item.product.images.length > 0)
-            ? item.product.images[0]
-            : "", 
-                  price: item.product.price,
-                  quantity: item.quantity,
-                  customSize: item.customSize,
-                  customImage: item.customImage,
-                }))
+            console.log("[DEBUG] Creating order with shipping info...")
 
-                await createOrder({
-                  userId: session.user.id,
-                  items: orderItems,
-                  totalAmount: total,
-                  status: "completed",
-                  paymentDetails: response,
-                })
-
-                toast({
-                  title: "Order Placed!",
-                  description: "Your order has been successfully placed. Thank you for your purchase!",
-                })
-                clearCart()
-                setAppliedCoupon(null)
-                setCouponCode("")
-
-                // Send SMS confirmation
-                const smsMessage = `Aahaanya Creatives: Your order ${order.id} has been confirmed! Total: ₹${(total||0).toFixed(2)}. Thank you for your purchase!`
-                try {
-                  const smsResponse = await fetch("/api/send-sms", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ to: phone, body: smsMessage }),
-                  })
-                  if (smsResponse.ok) {
-                    toast({ title: "SMS Sent", description: "Order confirmation SMS sent to your phone." })
-                  } else {
-                    const smsErrorData = await smsResponse.json()
-                    console.error("Failed to send SMS:", smsErrorData.error)
-                    toast({
-                      title: "SMS Failed",
-                      description: "Could not send order confirmation SMS.",
-                      variant: "destructive",
-                    })
-                  }
-                } catch (smsError) {
-                  console.error("Error calling SMS API:", smsError)
-                  toast({
-                    title: "SMS Failed",
-                    description: "Error sending order confirmation SMS.",
-                    variant: "destructive",
-                  })
-                }
-
-                router.push(`/checkout/success?orderId=${encodeURIComponent(order.id || "")}`)
-              } catch (orderError: any) {
-                console.error("Order creation error:", orderError)
-                toast({
-                  title: "Order Failed",
-                  description: orderError.message || "Failed to create order. Please try again.",
-                  variant: "destructive",
-                })
-              } finally {
-                setLoading(false)
-              }
+            const createOrderResponse = await fetch("/api/orders", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ shippingInfo }),
             })
-          } catch (verificationError: any) {
-            console.error("Payment verification error:", verificationError)
+
+            console.log("[DEBUG] Order creation response status:", createOrderResponse.status)
+
+            if (!createOrderResponse.ok) {
+              const errorData = await createOrderResponse.json()
+              console.error("[DEBUG] Order creation failed:", errorData)
+              throw new Error(errorData.error || "Failed to create order.")
+            }
+
+            const orderResult = await createOrderResponse.json()
+            console.log("[DEBUG] Order created successfully:", orderResult.order?.id)
+
+            // Step 3: Update order with payment details
+            console.log("[DEBUG] Updating order with payment details...")
+
+            const updateResponse = await fetch("/api/orders", {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                orderId: orderResult.order.id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            })
+
+            console.log("[DEBUG] Order update response status:", updateResponse.status)
+
+            if (!updateResponse.ok) {
+              const errorData = await updateResponse.json()
+              console.error("[DEBUG] Order update failed:", errorData)
+              throw new Error(errorData.error || "Failed to update order with payment details.")
+            }
+
+            const updateResult = await updateResponse.json()
+            console.log("[DEBUG] Order updated successfully")
+
+            // Step 4: Apply coupon usage if exists
+            if (appliedCoupon) {
+              console.log("[DEBUG] Updating coupon usage...")
+              try {
+                await fetch("/api/coupons", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id: appliedCoupon.id }),
+                })
+              } catch (couponError) {
+                console.error("[DEBUG] Coupon update failed:", couponError)
+                // Don't fail the entire process for coupon update failure
+              }
+            }
+
+            // Step 5: Send SMS confirmation
+            const smsMessage = `Aahaanya Creatives: Your order ${orderResult.order.id} has been confirmed! Total: ₹${total.toFixed(2)}. Thank you for your purchase!`
+            try {
+              console.log("[DEBUG] Sending SMS confirmation...")
+              const smsResponse = await fetch("/api/send-sms", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ to: phone, body: smsMessage }),
+              })
+              if (smsResponse.ok) {
+                console.log("[DEBUG] SMS sent successfully")
+                toast({ 
+                  title: "SMS Sent", 
+                  description: "Order confirmation SMS sent to your phone." 
+                })
+              } else {
+                const smsErrorData = await smsResponse.json()
+                console.error("[DEBUG] SMS send failed:", smsErrorData)
+              }
+            } catch (smsError) {
+              console.error("[DEBUG] SMS API error:", smsError)
+              // Don't fail the entire process for SMS failure
+            }
+
+            // Step 6: Success actions
             toast({
-              title: "Payment Failed",
-              description: verificationError.message || "Payment verification failed. Please contact support.",
+              title: "Order Placed Successfully!",
+              description: "Your order has been confirmed. You will receive an email confirmation shortly.",
+            })
+
+            // Clear cart and reset form
+            clearCart()
+            setAppliedCoupon(null)
+            setCouponCode("")
+            
+            // Reset form fields
+            setFirstName("")
+            setLastName("")
+            setAddress("")
+            setCity("")
+            setState("")
+            setZip("")
+            setPhone("")
+            setNotes("")
+
+            console.log("[DEBUG] Redirecting to success page...")
+            router.push(`/checkout/success?orderId=${encodeURIComponent(orderResult.order.id)}`)
+            
+          } catch (error: any) {
+            console.error("[DEBUG] Payment processing error:", error)
+            toast({
+              title: "Payment Processing Failed",
+              description: error.message || "Failed to process your payment. Please contact support if the amount was deducted.",
               variant: "destructive",
             })
+          } finally {
             setLoading(false)
           }
         },
@@ -341,28 +438,62 @@ export default function CheckoutPage() {
         },
       }
 
+      console.log("[DEBUG] Opening Razorpay checkout...")
       const rzp1 = new window.Razorpay(options)
+      
       rzp1.on("payment.failed", (response: any) => {
-        console.error("Razorpay payment failed:", response.error)
+        console.error("[DEBUG] Razorpay payment failed:", response.error)
         toast({
           title: "Payment Failed",
-          description: response.error.description || "Your payment could not be processed.",
+          description: response.error.description || "Your payment could not be processed. Please try again.",
           variant: "destructive",
         })
         setLoading(false)
       })
+
+      // Handle payment modal closure without payment
+      rzp1.on("payment.cancel", () => {
+        console.log("[DEBUG] Payment cancelled by user")
+        toast({
+          title: "Payment Cancelled",
+          description: "Payment was cancelled. You can try again when ready.",
+          variant: "destructive",
+        })
+        setLoading(false)
+      })
+
       rzp1.open()
+
     } catch (error: any) {
-      console.error("Checkout process error:", error)
+      console.error("[DEBUG] Checkout initialization error:", error)
       toast({
         title: "Checkout Error",
-        description: error.message || "Something went wrong during checkout. Please try again.",
+        description: error.message || "Failed to initialize payment. Please try again.",
         variant: "destructive",
       })
       setLoading(false)
     }
   }
 
+  // Show loading state while session is loading
+  if (status === "loading") {
+    return (
+      <div className="container mx-auto px-4 py-8 md:px-6 md:py-12 text-center">
+        <div className="space-y-4">
+          <h1 className="text-3xl font-bold">Loading...</h1>
+          <p className="text-lg text-gray-500">Please wait while we load your checkout page.</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Redirect to login if not authenticated
+  if (status === "unauthenticated") {
+    router.push("/login")
+    return null
+  }
+
+  // Show empty cart message
   if (cartItems.length === 0) {
     return (
       <div className="container mx-auto px-4 py-8 md:px-6 md:py-12 text-center space-y-4">
@@ -379,59 +510,81 @@ export default function CheckoutPage() {
     <div className="container mx-auto px-4 py-8 md:px-6 md:py-12">
       <h1 className="text-3xl font-bold mb-8 text-center">Checkout</h1>
       <form onSubmit={handlePlaceOrder} className="grid gap-8 lg:grid-cols-2">
+        {/* Shipping Information Section */}
         <div className="space-y-6">
           <h2 className="text-2xl font-bold">Shipping Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="firstName">First Name</Label>
+              <Label htmlFor="firstName">First Name *</Label>
               <Input
                 id="firstName"
                 placeholder="John"
                 required
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                disabled={loading || isPending}
+                disabled={loading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name</Label>
+              <Label htmlFor="lastName">Last Name *</Label>
               <Input
                 id="lastName"
                 placeholder="Doe"
                 required
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                disabled={loading || isPending}
+                disabled={loading}
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
+            <Label htmlFor="address">Address *</Label>
             <Input
               id="address"
-              placeholder="123 Main St"
+              placeholder="123 Main Street, Apartment 4B"
               required
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              disabled={loading || isPending}
+              disabled={loading}
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="city">City</Label>
-              <Input id="city" placeholder="Anytown" required value={city} onChange={(e) => setCity(e.target.value)} disabled={loading || isPending} />
+              <Label htmlFor="city">City *</Label>
+              <Input 
+                id="city" 
+                placeholder="Mumbai" 
+                required 
+                value={city} 
+                onChange={(e) => setCity(e.target.value)} 
+                disabled={loading} 
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="state">State</Label>
-              <Input id="state" placeholder="CA" required value={state} onChange={(e) => setState(e.target.value)} disabled={loading || isPending} />
+              <Label htmlFor="state">State *</Label>
+              <Input 
+                id="state" 
+                placeholder="Maharashtra" 
+                required 
+                value={state} 
+                onChange={(e) => setState(e.target.value)} 
+                disabled={loading} 
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="zip">Zip Code</Label>
-              <Input id="zip" placeholder="12345" required value={zip} onChange={(e) => setZip(e.target.value)} disabled={loading || isPending} />
+              <Label htmlFor="zip">Pin Code *</Label>
+              <Input 
+                id="zip" 
+                placeholder="400001" 
+                required 
+                value={zip} 
+                onChange={(e) => setZip(e.target.value)} 
+                disabled={loading} 
+              />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="phone">Phone Number</Label>
+            <Label htmlFor="phone">Phone Number *</Label>
             <Input
               id="phone"
               type="tel"
@@ -439,35 +592,40 @@ export default function CheckoutPage() {
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              disabled={loading || isPending}
+              disabled={loading}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="notes">Order Notes (Optional)</Label>
             <Textarea
               id="notes"
-              placeholder="e.g., Leave at front door"
+              placeholder="Special delivery instructions, gift message, etc."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              disabled={loading || isPending}
+              disabled={loading}
+              rows={3}
             />
           </div>
         </div>
 
+        {/* Payment and Order Summary Section */}
         <div className="space-y-6">
           <h2 className="text-2xl font-bold">Payment Information</h2>
+          
+          {/* Payment Method Selection */}
           <div className="space-y-2">
             <Label htmlFor="paymentMethod">Payment Method</Label>
-            <Select defaultValue="razorpay" disabled={loading || isPending}>
+            <Select defaultValue="razorpay" disabled={loading}>
               <SelectTrigger id="paymentMethod">
                 <SelectValue placeholder="Select a payment method" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="razorpay">Razorpay</SelectItem>
+                <SelectItem value="razorpay">Razorpay (Cards, UPI, Netbanking)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
+          {/* Coupon Section */}
           <div className="space-y-2">
             <Label htmlFor="couponCode">Discount Coupon</Label>
             <div className="flex gap-2">
@@ -476,54 +634,124 @@ export default function CheckoutPage() {
                 placeholder="Enter coupon code"
                 value={couponCode}
                 onChange={(e) => setCouponCode(e.target.value)}
-                disabled={!!appliedCoupon || loading || isPending}
+                disabled={!!appliedCoupon || loading}
               />
-              <Button onClick={handleApplyCoupon} type="button" disabled={!!appliedCoupon || loading || isPending}>
+              <Button 
+                onClick={handleApplyCoupon} 
+                type="button" 
+                disabled={!!appliedCoupon || loading}
+                variant="outline"
+              >
                 Apply
               </Button>
             </div>
             {appliedCoupon && (
-              <p className="text-sm text-green-600">
-                Coupon "{appliedCoupon.code}" applied! (
-                {appliedCoupon.type === "percentage" ? `${appliedCoupon.value}%` : `₹${appliedCoupon.value}`})
-              </p>
+              <div className="flex items-center justify-between p-2 bg-green-50 rounded border">
+                <p className="text-sm text-green-700">
+                  Coupon "{appliedCoupon.code}" applied! (
+                  {appliedCoupon.type === "percentage" ? `${appliedCoupon.value}%` : `₹${appliedCoupon.value}`} off)
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAppliedCoupon(null)
+                    setCouponCode("")
+                  }}
+                  disabled={loading}
+                >
+                  Remove
+                </Button>
+              </div>
             )}
           </div>
 
-          <div className="border rounded-lg p-6 space-y-4">
+          {/* Order Summary */}
+          <div className="border rounded-lg p-6 space-y-4 bg-gray-50">
             <h2 className="text-2xl font-bold">Order Summary</h2>
-            <div className="flex justify-between">
-              <span>Subtotal ({cartItems.length} items)</span>
-              <span>₹{(subtotal||0).toFixed(2)}</span>
+            
+            {/* Cart Items Preview */}
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {cartItems.map((item, index) => (
+                <div key={index} className="flex justify-between items-center py-2 border-b last:border-b-0">
+                  <div className="flex-1">
+                    <p className="font-medium">{item.product.name}</p>
+                    <p className="text-sm text-gray-500">
+                      Qty: {item.quantity}
+                      {item.customSize && ` | Size: ${item.customSize}`}
+                    </p>
+                  </div>
+                  <span className="font-medium">₹{(item.product.price * item.quantity).toFixed(2)}</span>
+                </div>
+              ))}
             </div>
-            <div className="flex justify-between">
-              <span>Shipping</span>
-              <span>₹{(shipping||0).toFixed(2)}</span>
-            </div>
-            {appliedCoupon && (
-              <div className="flex justify-between text-green-600">
-                <span>Discount ({appliedCoupon.code})</span>
-                <span>
-                  -₹
-                  {(appliedCoupon.type === "percentage"
-                    ? subtotal * (appliedCoupon.value / 100)
-                    : (appliedCoupon.value||0)
-                  ).toFixed(2)}
-                </span>
+
+            {/* Pricing Breakdown */}
+            <div className="space-y-2 pt-4 border-t">
+              <div className="flex justify-between">
+                <span>Subtotal ({cartItems.length} items)</span>
+                <span>₹{subtotal.toFixed(2)}</span>
               </div>
-            )}
-            <div className="border-t pt-4 flex justify-between font-bold text-lg">
-              <span>Total</span>
-              <span>₹{(total||0).toFixed(2)}</span>
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span>₹{shipping.toFixed(2)}</span>
+              </div>
+              {appliedCoupon && (
+                <div className="flex justify-between text-green-600">
+                  <span>Discount ({appliedCoupon.code})</span>
+                  <span>
+                    -₹
+                    {(appliedCoupon.type === "percentage"
+                      ? (subtotal + shipping) * (appliedCoupon.value / 100)
+                      : appliedCoupon.value
+                    ).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <div className="border-t pt-4 flex justify-between font-bold text-lg">
+                <span>Total</span>
+                <span>₹{total.toFixed(2)}</span>
+              </div>
             </div>
-            <Button type="submit" className="w-full" disabled={loading || isPending || !razorpayLoaded}>
-              {loading || isPending ? "Processing Payment..." : "Pay with Razorpay"}
+
+            {/* Payment Button */}
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={loading || !razorpayLoaded}
+              size="lg"
+            >
+              {loading ? "Processing Payment..." : 
+               !razorpayLoaded ? "Loading Payment Gateway..." : 
+               `Pay ₹${total.toFixed(2)} with Razorpay`}
             </Button>
-            {!razorpayLoaded && <p className="text-sm text-center text-muted-foreground">Loading payment gateway...</p>}
+
+            {/* Status Messages */}
+            {!razorpayLoaded && (
+              <p className="text-sm text-center text-amber-600 bg-amber-50 p-2 rounded">
+                Loading payment gateway... Please wait.
+              </p>
+            )}
+            
             <p className="text-sm text-muted-foreground text-center">
               By placing your order, you agree to our Terms and Conditions.
+              <br />
+              Your payment is secured by Razorpay.
             </p>
           </div>
+
+          {/* Debug Info (remove in production) */}
+          {process.env.NODE_ENV === "development" && (
+            <div className="border rounded-lg p-4 bg-gray-100 text-xs space-y-1">
+              <p><strong>Debug Info:</strong></p>
+              <p>Session Status: {status}</p>
+              <p>User ID: {session?.user?.id || "Not found"}</p>
+              <p>Cart Items: {cartItems.length}</p>
+              <p>Razorpay Loaded: {razorpayLoaded ? "Yes" : "No"}</p>
+              <p>Total: ₹{total.toFixed(2)}</p>
+            </div>
+          )}
         </div>
       </form>
     </div>
