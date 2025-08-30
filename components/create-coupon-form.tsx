@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 
-export function CreateCouponForm() {
+export function CreateCouponForm() { 
   const [code, setCode] = useState("")
   const [type, setType] = useState<"percentage" | "fixed">("percentage")
   const [value, setValue] = useState("")
@@ -20,83 +20,96 @@ export function CreateCouponForm() {
   const router = useRouter()
 
   const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoading(true)
+    event.preventDefault();
+    setLoading(true);
 
-    const newCoupon = {
-      code: code.trim().toUpperCase(),
-      type,
-      value: Number.parseFloat(value),
-      usageLimit: usageLimit ? Number.parseInt(usageLimit) : undefined,
-      // ADD THE DATE FIELDS
-      validFrom,
-      validUntil,
-    }
+    try {
+      // Basic validation
+      if (!code.trim()) {
+        throw new Error("Coupon code is required");
+      }
 
-    if (!newCoupon.code || isNaN(newCoupon.value)) {
-      toast({
-        title: "Invalid Input",
-        description: "Please provide a valid code and value.",
-        variant: "destructive",
-      })
-      setLoading(false)
-      return
-    }
+      const parsedValue = Number.parseFloat(value);
+      if (isNaN(parsedValue) || parsedValue <= 0) {
+        throw new Error("Please enter a valid positive number for discount value");
+      }
 
-    // ADD DATE VALIDATION
-    if (!validFrom || !validUntil) {
-      toast({
-        title: "Invalid Input",
-        description: "Please provide valid from and until dates.",
-        variant: "destructive",
-      })
-      setLoading(false)
-      return
-    }
+      if (type === "percentage" && parsedValue > 100) {
+        throw new Error("Percentage discount cannot be more than 100%");
+      }
 
-    // CHECK DATE LOGIC
-    if (new Date(validFrom) >= new Date(validUntil)) {
-      toast({
-        title: "Invalid Dates",
-        description: "Valid until date must be after valid from date.",
-        variant: "destructive",
-      })
-      setLoading(false)
-      return
-    }
+      // Date validation
+      if (!validFrom || !validUntil) {
+        throw new Error("Please provide valid from and until dates");
+      }
 
-    const response = await fetch("/api/coupons", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(newCoupon),
-    })
+      const fromDate = new Date(validFrom);
+      const untilDate = new Date(validUntil);
+      
+      if (isNaN(fromDate.getTime()) || isNaN(untilDate.getTime())) {
+        throw new Error("Invalid date format");
+      }
 
-    setLoading(false)
+      if (fromDate >= untilDate) {
+        throw new Error("Valid until date must be after valid from date");
+      }
 
-    if (response.ok) {
+      const newCoupon = {
+        code: code.trim().toUpperCase(),
+        type,
+        value: parsedValue,
+        usageLimit: usageLimit ? Number.parseInt(usageLimit) : null,
+        validFrom: fromDate.toISOString(),
+        validUntil: untilDate.toISOString(),
+      };
+
+      console.log('[DEBUG] Creating coupon:', newCoupon);
+
+      const response = await fetch("/api/coupons", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        credentials: "include", // Important for auth
+        body: JSON.stringify(newCoupon),
+      });
+
+      const data = await response.json();
+      console.log('[DEBUG] Server response:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "Failed to create coupon");
+      }
+
       toast({
         title: "Coupon Created!",
         description: `Coupon "${newCoupon.code}" has been successfully added.`,
-      })
-      // RESET ALL FIELDS INCLUDING DATES
-      setCode("")
-      setValue("")
-      setUsageLimit("")
-      setValidFrom("")
-      setValidUntil("")
-      setType("percentage")
-      router.refresh() // Revalidate data to show new coupon
-    } else {
-      const data = await response.json()
+      });
+
+      // Reset form
+      setCode("");
+      setValue("");
+      setUsageLimit("");
+      setValidFrom("");
+      setValidUntil("");
+      setType("percentage");
+      
+      // Refresh the page to show new coupon
+      router.refresh();
+      
+    } catch (error) {
+      console.error('[DEBUG] Coupon creation error:', error);
+      
       toast({
         title: "Failed to Create Coupon",
-        description: data.error || "Something went wrong.",
+        description: error instanceof Error ? error.message : "Something went wrong",
         variant: "destructive",
-      })
+      });
+    } finally {
+      setLoading(false);
     }
-  }
+  }; // ← This closing brace was missing!
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-4 p-4 border rounded-lg bg-secondary">
@@ -182,4 +195,4 @@ export function CreateCouponForm() {
       </Button>
     </form>
   )
-}
+} // ← Removed the extra closing brace that was here

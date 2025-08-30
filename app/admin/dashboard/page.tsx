@@ -56,6 +56,7 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
 
+  // ✅ FIXED: Initialize as empty arrays to prevent map errors
   const [products, setProducts] = useState<Product[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -84,14 +85,52 @@ export default function AdminDashboardPage() {
         if (!orderRes.ok) throw new Error('Failed to fetch orders');
 
         const products: Product[] = await prodRes.json();
-        const coupons: Coupon[] = await couponRes.json();
+        const couponData = await couponRes.json();
         const ordersData = await orderRes.json();
 
-        // Handle both array and object responses
-        const ordersArray: Order[] = Array.isArray(ordersData) ? ordersData : (ordersData.orders || []);
+        // ✅ FIXED: Handle different coupon response formats
+        let couponsArray: Coupon[] = [];
+        
+        console.log('Raw coupon response:', couponData); // Debug log
+        
+        if (Array.isArray(couponData)) {
+          // If response is directly an array
+          couponsArray = couponData;
+        } else if (couponData && couponData.coupons && Array.isArray(couponData.coupons)) {
+          // If response is wrapped in an object like { coupons: [...] }
+          couponsArray = couponData.coupons;
+        } else if (couponData && couponData.data && Array.isArray(couponData.data)) {
+          // If response is wrapped like { data: [...] }
+          couponsArray = couponData.data;
+        } else if (couponData && typeof couponData === 'object' && couponData.id) {
+          // If it's a single coupon object, wrap it in array
+          couponsArray = [couponData];
+        } else {
+          // Fallback to empty array
+          console.warn('Unexpected coupon data format:', couponData);
+          couponsArray = [];
+        }
 
-        setProducts(products);
-        setCoupons(coupons);
+        console.log('Processed coupons array:', couponsArray); // Debug log
+
+        // ✅ FIXED: Handle different order response formats
+        let ordersArray: Order[] = [];
+        
+        if (Array.isArray(ordersData)) {
+          ordersArray = ordersData;
+        } else if (ordersData && ordersData.orders && Array.isArray(ordersData.orders)) {
+          ordersArray = ordersData.orders;
+        } else if (ordersData && ordersData.data && Array.isArray(ordersData.data)) {
+          ordersArray = ordersData.data;
+        } else {
+          ordersArray = [];
+        }
+
+        // ✅ Ensure products is also an array
+        const productsArray: Product[] = Array.isArray(products) ? products : [];
+
+        setProducts(productsArray);
+        setCoupons(couponsArray);
         setOrders(ordersArray);
 
         // Calculate earnings from completed orders
@@ -101,6 +140,11 @@ export default function AdminDashboardPage() {
         const message = err instanceof Error ? err.message : "Failed to load dashboard data";
         console.error('Dashboard error:', err);
         setError(message);
+        
+        // ✅ Ensure arrays are set even on error to prevent map errors
+        setProducts([]);
+        setCoupons([]);
+        setOrders([]);
       } finally {
         setLoading(false);
       }
@@ -198,14 +242,14 @@ export default function AdminDashboardPage() {
     }
   };
 
-  if (loading) return <div>Loading dashboard...</div>;
-  if (error) return <div>Error: {error}. Check your API endpoints and database connection.</div>;
+  if (loading) return <div className="flex items-center justify-center min-h-screen">Loading dashboard...</div>;
+  if (error) return <div className="flex items-center justify-center min-h-screen text-red-500">Error: {error}. Check your API endpoints and database connection.</div>;
 
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
   const shippedOrders = orders.filter(o => o.status === 'shipped').length;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -293,7 +337,7 @@ export default function AdminDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orders.length === 0 ? (
+                {(!orders || !Array.isArray(orders) || orders.length === 0) ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No orders found
@@ -406,32 +450,40 @@ export default function AdminDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {products.map((product) => (
-                  <TableRow key={product.id}>
-                    <TableCell>
-                      <Image
-                        src={product.images[0] || "/placeholder.svg?height=64&width=64"}
-                        width={64}
-                        height={64}
-                        alt={product.name}
-                        className="aspect-square rounded-md object-cover"
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">{product.name}</TableCell>
-                    <TableCell>{product.category}</TableCell>
-                    <TableCell className="text-right">₹{product.price.toFixed(2)}</TableCell>
-                    <TableCell className="text-center">
-                      <DeleteProductButton productId={product.id} />
+                {(!products || !Array.isArray(products) || products.length === 0) ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      No products found
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  products.map((product) => (
+                    <TableRow key={product.id}>
+                      <TableCell>
+                        <Image
+                          src={product.images[0] || "/placeholder.svg?height=64&width=64"}
+                          width={64}
+                          height={64}
+                          alt={product.name}
+                          className="aspect-square rounded-md object-cover"
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">{product.name}</TableCell>
+                      <TableCell>{product.category}</TableCell>
+                      <TableCell className="text-right">₹{product.price.toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <DeleteProductButton productId={product.id} />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
 
-      {/* Coupon Management */}
+      {/* Coupon Management - ✅ FIXED with proper error handling */}
       <Card>
         <CardHeader>
           <CardTitle>Coupon Management</CardTitle>
@@ -453,39 +505,48 @@ export default function AdminDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {coupons.map((coupon) => (
-                  <TableRow key={coupon.id}>
-                    <TableCell className="font-medium">{coupon.code}</TableCell>
-                    <TableCell>{coupon.type === "percentage" ? "Percentage" : "Fixed"}</TableCell>
-                    <TableCell className="text-right">
-                      {coupon.type === "percentage" 
-                        ? `${coupon.value || 0}%` 
-                        : `₹${(coupon.value || 0).toFixed(2)}`
-                      }
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {coupon.usedCount}
-                      {coupon.usageLimit !== undefined ? ` / ${coupon.usageLimit}` : " (Unlimited)"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {coupon.validFrom ? 
-                        new Date(coupon.validFrom).toLocaleDateString('en-IN') : 
-                        'Not set'
-                      }
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {coupon.validUntil ? 
-                        new Date(coupon.validUntil).toLocaleDateString('en-IN') : 
-                        'Not set'
-                      }
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant={coupon.isActive ? "default" : "secondary"}>
-                        {coupon.isActive ? "Active" : "Inactive"}
-                      </Badge>
+                {/* ✅ FIXED: Added comprehensive safety checks */}
+                {(!coupons || !Array.isArray(coupons) || coupons.length === 0) ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      {loading ? "Loading coupons..." : "No coupons found"}
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  coupons.map((coupon) => (
+                    <TableRow key={coupon.id}>
+                      <TableCell className="font-medium">{coupon.code}</TableCell>
+                      <TableCell>{coupon.type === "percentage" ? "Percentage" : "Fixed"}</TableCell>
+                      <TableCell className="text-right">
+                        {coupon.type === "percentage" 
+                          ? `${coupon.value || 0}%` 
+                          : `₹${(coupon.value || 0).toFixed(2)}`
+                        }
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {coupon.usedCount || 0}
+                        {coupon.usageLimit !== undefined ? ` / ${coupon.usageLimit}` : " (Unlimited)"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {coupon.validFrom ? 
+                          new Date(coupon.validFrom).toLocaleDateString('en-IN') : 
+                          'Not set'
+                        }
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {coupon.validUntil ? 
+                          new Date(coupon.validUntil).toLocaleDateString('en-IN') : 
+                          'Not set'
+                        }
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={coupon.isActive ? "default" : "secondary"}>
+                          {coupon.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
