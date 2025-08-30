@@ -5,7 +5,6 @@ import { handleFirebaseError } from '@/lib/firebase-utils';
 
 const ORDERS = adminDB.collection('orders');
 
-// GET: Get all orders (requires admin authentication)
 // PATCH: Update order status (mark as shipped/delivered)
 export async function PATCH(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {

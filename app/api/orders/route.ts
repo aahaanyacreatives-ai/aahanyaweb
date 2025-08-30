@@ -1,6 +1,6 @@
-// app/api/orders/route.ts
+// app/api/orders/route.ts - FIXED VERSION WITH ATOMIC STOCK MANAGEMENT
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDB, Timestamp } from '@/lib/firebaseAdmin';
+import { adminDB, serverTimestamp, Timestamp } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
 import { handleFirebaseError } from '@/lib/firebase-utils';
 import { updateAdminStats } from '@/lib/admin-stats';
@@ -48,12 +48,12 @@ export async function GET(req: NextRequest) {
       }
       
       const snap = await ORDERS.where('userId', '==', userId)
-                              .orderBy('createdAt', 'desc')
+                              .orderBy('orderDate', 'desc')
                               .get();
       
       console.log('[DEBUG] Orders found:', snap.size);
       
-      const orders = snap.docs.map(doc => {
+      const orders = snap.docs.map((doc: any) => {
         const data = doc.data();
         return {
           id: doc.id,
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
       let orderData: any;
       
       try {
-        await adminDB.runTransaction(async (transaction) => {
+        await adminDB.runTransaction(async (transaction: any) => {
           const items: OrderItem[] = [];
           let totalAmount = 0;
 
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
             totalAmount += orderItem.price * orderItem.quantity;
           }
 
-          // 2. Create order data with Firestore timestamps
+          // 2. Create order data with proper Firestore server timestamps
           const now = Timestamp.now();
           orderData = {
             userId,
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
           transaction.set(orderRef, orderData);
           
           // Clear cart items
-          cartSnap.docs.forEach(doc => {
+          cartSnap.docs.forEach((doc: any) => {
             transaction.delete(doc.ref);
           });
 
@@ -266,8 +266,7 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized access to order' }, { status: 403 });
       }
 
-      // Update order with payment details using Firestore timestamp
-      const now = Timestamp.now();
+      // Update order with payment details
       const updateData = {
         status: 'completed',
         paymentStatus: 'success',
@@ -275,9 +274,9 @@ export async function PATCH(req: NextRequest) {
           razorpay_order_id,
           razorpay_payment_id,
           razorpay_signature,
-          verifiedAt: now
+          verifiedAt: new Date()
         },
-        updatedAt: now
+        updatedAt: new Date()
       };
 
       await orderRef.update(updateData);
@@ -364,13 +363,12 @@ export async function DELETE(req: NextRequest) {
       }
 
       // Use transaction to restore stock and update order
-      await adminDB.runTransaction(async (transaction) => {
-        // Update order status with Firestore timestamp
-        const now = Timestamp.now();
+      await adminDB.runTransaction(async (transaction: any) => {
+        // Update order status
         transaction.update(orderRef, {
           status: 'cancelled',
-          updatedAt: now,
-          cancelledAt: now
+          updatedAt: new Date(),
+          cancelledAt: new Date()
         });
 
         // Restore product stock if applicable
@@ -384,7 +382,7 @@ export async function DELETE(req: NextRequest) {
               if (productData.stock !== undefined) {
                 transaction.update(productRef, {
                   stock: productData.stock + item.quantity,
-                  updatedAt: Timestamp.now()
+                  updatedAt: new Date()
                 });
               }
             }

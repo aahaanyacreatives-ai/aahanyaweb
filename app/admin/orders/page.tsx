@@ -73,12 +73,12 @@ export default function AdminOrdersPage() {
   // Handle mark as shipped
   const handleShipOrder = async (order: Order) => {
     try {
-      const res = await fetch(`/api/admin/orders/${order.id}`, {
+      const res = await fetch('/api/admin/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: 'shipped',
-          shippedAt: new Date().toISOString()
+          orderId: order.id,
+          action: 'shipped'
         })
       });
 
@@ -114,7 +114,7 @@ export default function AdminOrdersPage() {
   // Handle delete order
   const handleDeleteOrder = async (order: Order) => {
     try {
-      const res = await fetch(`/api/admin/orders/${order.id}`, {
+      const res = await fetch(`/api/admin/orders?orderId=${order.id}`, {
         method: 'DELETE'
       });
 
@@ -153,8 +153,8 @@ export default function AdminOrdersPage() {
           throw new Error(`Error: ${res.status}`);
         }
         const data = await res.json();
-        if (Array.isArray(data)) {
-          setOrders(data);
+        if (data.orders) {
+          setOrders(data.orders);
         } else if (data.error) {
           throw new Error(data.error);
         } else {
