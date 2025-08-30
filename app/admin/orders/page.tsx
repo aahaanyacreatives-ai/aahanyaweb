@@ -267,8 +267,11 @@ export default function AdminOrdersPage() {
       setUpdating(true);
       console.log('[DEBUG] Deleting order:', order.id);
       
-      const res = await fetch(`/api/admin/orders?orderId=${order.id}`, {
+      const res = await fetch(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
         credentials: 'include',
       });
 
