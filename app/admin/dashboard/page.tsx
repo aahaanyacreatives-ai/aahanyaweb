@@ -1,40 +1,55 @@
-// app/admin/dashboard/page.tsx - FIXED FOR TYPESCRIPT ERRORS AND FIREBASE
+// app/admin/dashboard/page.tsx - FIXED VERSION WITH ORDER MANAGEMENT
 
 'use client';
 
 import { useEffect, useState } from 'react';
 import { signOut, useSession } from "next-auth/react";
-import type { DefaultSession } from "next-auth";
-  // FIXED: Import DefaultSession
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
-// Import UI components individually (FIXED: No barrel import if alias not set; use shadcn/ui paths)
+// Import UI components
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { CardContent } from "@/components/ui/card";
-import { CardDescription } from "@/components/ui/card";
-import { CardHeader } from "@/components/ui/card";
-import { CardTitle } from "@/components/ui/card";
-import { Table } from "@/components/ui/table";
-import { TableBody } from "@/components/ui/table";
-import { TableCell } from "@/components/ui/table";
-import { TableHead } from "@/components/ui/table";
-import { TableHeader } from "@/components/ui/table";
-import { TableRow } from "@/components/ui/table";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "@/hooks/use-toast";
 
 import { AddProductForm } from "@/components/add-product-form";
 import { DeleteProductButton } from "@/components/delete-product-button";
 import { CreateCouponForm } from "@/components/create-coupon-form";
 import type { Product, Coupon } from "@/lib/types";
 
-// Types are now defined in /types/next-auth.d.ts
-
-// Define Order type
+// Enhanced Order interface with customer details
 interface Order {
   id: string;
   totalAmount: number;
-  status: string;
+  status: 'pending' | 'completed' | 'shipped' | 'cancelled';
+  createdAt: string;
+  razorpay_payment_id?: string;
+  razorpay_order_id?: string;
+  
+  // Customer details from checkout
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  shippingAddress: {
+    firstName: string;
+    lastName: string;
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+    phone: string;
+    notes?: string;
+  };
+  
+  // Order items
+  items: Array<{
+    productName: string;
+    quantity: number;
+    price: number;
+    customSize?: string;
+  }>;
 }
 
 export default function AdminDashboardPage() {
@@ -43,10 +58,11 @@ export default function AdminDashboardPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [totalEarnings, setTotalEarnings] = useState(0);
-  const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatingOrder, setUpdatingOrder] = useState<string | null>(null);
 
   useEffect(() => {
     async function initialize() {
@@ -69,16 +85,21 @@ export default function AdminDashboardPage() {
 
         const products: Product[] = await prodRes.json();
         const coupons: Coupon[] = await couponRes.json();
-        const orders: Order[] = await orderRes.json();
+        const ordersData = await orderRes.json();
+
+        // Handle both array and object responses
+        const ordersArray: Order[] = Array.isArray(ordersData) ? ordersData : (ordersData.orders || []);
 
         setProducts(products);
         setCoupons(coupons);
+        setOrders(ordersArray);
 
-        const completedOrders = orders.filter(o => o.status === 'completed');
-        setTotalOrders(completedOrders.length);
-        setTotalEarnings(completedOrders.reduce((sum, o) => sum + o.totalAmount, 0));
+        // Calculate earnings from completed orders
+        const completedOrders = ordersArray.filter(o => o.status === 'completed' || o.status === 'shipped');
+        setTotalEarnings(completedOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to load dashboard data";
+        console.error('Dashboard error:', err);
         setError(message);
       } finally {
         setLoading(false);
@@ -86,6 +107,87 @@ export default function AdminDashboardPage() {
     }
     initialize();
   }, [status, session, router]);
+
+  // Handle order status updates
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: 'shipped' | 'completed' | 'cancelled') => {
+    setUpdatingOrder(orderId);
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          orderId,
+          status: newStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update order status');
+      }
+
+      // Update local state
+      setOrders(prev => prev.map(order => 
+        order.id === orderId ? { ...order, status: newStatus } : order
+      ));
+
+      toast({
+        title: "Order Updated",
+        description: `Order status changed to ${newStatus}`,
+      });
+
+    } catch (error) {
+      console.error('Error updating order:', error);
+      toast({
+        title: "Update Failed",
+        description: "Failed to update order status",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingOrder(null);
+    }
+  };
+
+  // Handle order deletion
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) {
+      return;
+    }
+
+    setUpdatingOrder(orderId);
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete order');
+      }
+
+      // Remove from local state
+      setOrders(prev => prev.filter(order => order.id !== orderId));
+
+      toast({
+        title: "Order Deleted",
+        description: "Order has been successfully deleted",
+      });
+
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete order",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingOrder(null);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -97,11 +199,14 @@ export default function AdminDashboardPage() {
   };
 
   if (loading) return <div>Loading dashboard...</div>;
-  if (error) return <div>Error: {error}. Check your Firebase connection and env vars.</div>;
+  if (error) return <div>Error: {error}. Check your API endpoints and database connection.</div>;
+
+  const pendingOrders = orders.filter(o => o.status === 'pending').length;
+  const shippedOrders = orders.filter(o => o.status === 'shipped').length;
 
   return (
     <div className="grid gap-6">
-      {/* Header with Title and Logout Button */}
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
@@ -112,7 +217,6 @@ export default function AdminDashboardPage() {
           )}
         </div>
         
-        {/* Logout Button */}
         <Button 
           variant="outline" 
           onClick={handleLogout}
@@ -123,8 +227,8 @@ export default function AdminDashboardPage() {
         </Button>
       </div>
 
-      {/* Dashboard Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Dashboard Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
@@ -132,7 +236,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">₹{totalEarnings.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">Updated on page reload</p>
+            <p className="text-xs text-muted-foreground">From completed orders</p>
           </CardContent>
         </Card>
         <Card>
@@ -142,7 +246,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{products.length}</div>
-            <p className="text-xs text-muted-foreground">+5 new products this week</p>
+            <p className="text-xs text-muted-foreground">Active products</p>
           </CardContent>
         </Card>
         <Card>
@@ -151,11 +255,136 @@ export default function AdminDashboardPage() {
             <ShoppingCartIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalOrders}</div>
-            <p className="text-xs text-muted-foreground">Updated on page reload</p>
+            <div className="text-2xl font-bold">{orders.length}</div>
+            <p className="text-xs text-muted-foreground">All time orders</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pending Orders</CardTitle>
+            <ClockIcon className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{pendingOrders}</div>
+            <p className="text-xs text-muted-foreground">Need attention</p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Orders Management */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Orders Management</CardTitle>
+          <CardDescription>View and manage all orders with customer details.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Order ID</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Items</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-center">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      No orders found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  orders.map((order) => (
+                    <TableRow key={order.id}>
+                      <TableCell className="font-mono text-sm">
+                        {order.id.slice(0, 8)}...
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">
+                            {order.customerName || `${order.shippingAddress?.firstName} ${order.shippingAddress?.lastName}` || 'Unknown'}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {order.customerEmail || 'N/A'}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-[200px]">
+                          {order.items?.map((item, idx) => (
+                            <div key={idx} className="text-sm">
+                              {item.productName} (×{item.quantity})
+                              {item.customSize && ` - ${item.customSize}`}
+                            </div>
+                          )) || (
+                            <span className="text-muted-foreground">No items data</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {order.customerPhone || order.shippingAddress?.phone || 'N/A'}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        ₹{order.totalAmount?.toFixed(2) || '0.00'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          order.status === 'completed' ? 'default' :
+                          order.status === 'shipped' ? 'secondary' :
+                          order.status === 'pending' ? 'destructive' : 'outline'
+                        }>
+                          {order.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN') : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {order.status === 'pending' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUpdateOrderStatus(order.id, 'shipped')}
+                              disabled={updatingOrder === order.id}
+                            >
+                              Ship
+                            </Button>
+                          )}
+                          {order.status === 'shipped' && (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleUpdateOrderStatus(order.id, 'completed')}
+                              disabled={updatingOrder === order.id}
+                            >
+                              Complete
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteOrder(order.id)}
+                            disabled={updatingOrder === order.id}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Product Management */}
       <Card>
@@ -181,7 +410,7 @@ export default function AdminDashboardPage() {
                   <TableRow key={product.id}>
                     <TableCell>
                       <Image
-                        src={product.images[0] || "/placeholder.svg?height=64&width=64&query=jewelry%20product%20admin"}
+                        src={product.images[0] || "/placeholder.svg?height=64&width=64"}
                         width={64}
                         height={64}
                         alt={product.name}
@@ -251,13 +480,9 @@ export default function AdminDashboardPage() {
                       }
                     </TableCell>
                     <TableCell className="text-center">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          coupon.isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                        }`}
-                      >
+                      <Badge variant={coupon.isActive ? "default" : "secondary"}>
                         {coupon.isActive ? "Active" : "Inactive"}
-                      </span>
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -270,7 +495,7 @@ export default function AdminDashboardPage() {
   );
 }
 
-// Icon Components (Moved to bottom for organization)
+// Icon Components
 function LogOutIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -310,6 +535,15 @@ function ShoppingCartIcon(props: React.SVGProps<SVGSVGElement>) {
       <circle cx="8" cy="21" r="1" />
       <circle cx="19" cy="21" r="1" />
       <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+    </svg>
+  );
+}
+
+function ClockIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
     </svg>
   );
 }

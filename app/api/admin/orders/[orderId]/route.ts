@@ -1,3 +1,4 @@
+//C:\Users\Asus\OneDrive\Desktop\Aahanya\app\api\admin\orders\[orderId]\route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDB } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';

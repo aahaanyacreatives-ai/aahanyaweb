@@ -290,7 +290,7 @@ export default function CheckoutPage() {
             const verifyResult = await verifyResponse.json()
             console.log("[DEBUG] Payment verified successfully:", verifyResult)
 
-            // Step 2: Create order in database
+            // Step 2: Create order in database with complete information
             const shippingInfo = {
               firstName,
               lastName,
@@ -302,14 +302,38 @@ export default function CheckoutPage() {
               notes
             }
 
-            console.log("[DEBUG] Creating order with shipping info...")
+            const orderData = {
+              shippingInfo,
+              cartItems: cartItems.map(item => ({
+                product: {
+                  id: item.product.id,
+                  name: item.product.name,
+                  price: item.product.price,
+                  images: item.product.images || []
+                },
+                quantity: item.quantity,
+                customSize: item.customSize || null,
+                customImage: item.customImage || null
+              })),
+              subtotal,
+              shipping,
+              totalAmount: total,
+              appliedCoupon: appliedCoupon ? {
+                id: appliedCoupon.id,
+                code: appliedCoupon.code,
+                type: appliedCoupon.type,
+                value: appliedCoupon.value
+              } : null
+            }
+
+            console.log("[DEBUG] Creating order with complete data...")
 
             const createOrderResponse = await fetch("/api/orders", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ shippingInfo }),
+              body: JSON.stringify(orderData),
             })
 
             console.log("[DEBUG] Order creation response status:", createOrderResponse.status)
@@ -553,7 +577,7 @@ export default function CheckoutPage() {
               <Label htmlFor="city">City *</Label>
               <Input 
                 id="city" 
-                
+                placeholder="Mumbai"
                 required 
                 value={city} 
                 onChange={(e) => setCity(e.target.value)} 
@@ -564,7 +588,7 @@ export default function CheckoutPage() {
               <Label htmlFor="state">State *</Label>
               <Input 
                 id="state" 
-                 
+                placeholder="Maharashtra"
                 required 
                 value={state} 
                 onChange={(e) => setState(e.target.value)} 
@@ -588,7 +612,7 @@ export default function CheckoutPage() {
             <Input
               id="phone"
               type="tel"
-             
+              placeholder="+91 9999999999"
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
