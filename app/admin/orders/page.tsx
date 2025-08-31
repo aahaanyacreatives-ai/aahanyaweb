@@ -120,38 +120,53 @@ export default function AdminOrdersPage() {
   };
 
   const handleShipOrder = async (order: Order) => {
-    try {
-      setUpdating(true);
-      const res = await fetch('/api/admin/orders', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          orderId: order.id,
-          status: 'completed',    // Ship button sets status to completed
-          action: 'completed'
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update order');
+  try {
+    setUpdating(true);
+    console.log('Sending PATCH to update order:', order.id); // debug log
 
-      setOrders(current =>
-        current.map(o =>
-          o.id === order.id ? { ...o, status: 'completed', updatedAt: new Date().toISOString() } : o
-        )
-      );
+    const res = await fetch('/api/admin/orders', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        orderId: order.id,    // Direct field, no nesting
+        status: 'completed',  // lowercase, valid status
+        action: 'completed'   // value consistent with status
+      }),
+    });
 
-      toast({
-        title: "Order Completed",
-        description: `Order ${order.id.substring(0, 8)}... marked as completed.`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update order status';
-      toast({ title: "Error", description: message, variant: "destructive" });
-    } finally {
-      setUpdating(false);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to update order');
     }
-  };
+
+    setOrders(current =>
+      current.map(o =>
+        o.id === order.id
+          ? { ...o, status: 'completed', updatedAt: new Date().toISOString() }
+          : o
+      )
+    );
+
+    toast({
+      title: 'Order Completed',
+      description: `Order ${order.id.substring(0, 8)}... marked as completed.`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update order status';
+    toast({
+      title: 'Error',
+      description: message,
+      variant: 'destructive',
+    });
+  } finally {
+    setUpdating(false);
+  }
+};
+
 
   const handleDeleteOrder = async (order: Order) => {
     try {

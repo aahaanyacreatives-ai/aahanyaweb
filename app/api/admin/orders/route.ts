@@ -1,4 +1,3 @@
-// app/api/admin/orders/route.ts - COMPLETE FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDB, serverTimestamp, Timestamp } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
@@ -14,11 +13,10 @@ export async function GET(req: NextRequest) {
       const timestamp = new Date().toISOString();
       console.log(`[DEBUG ${timestamp}] Token in admin/orders:`, JSON.stringify(token));
 
-      // Verify admin role - check multiple possible admin indicators
       const isAdmin = token.role === 'admin' || 
-                     token.isAdmin === true || 
-                     token.admin === true ||
-                     token.email === 'admin@yourdomain.com'; // Replace with your admin email
+                      token.isAdmin === true || 
+                      token.admin === true ||
+                      token.email === 'admin@yourdomain.com'; // adjust as needed
 
       if (!isAdmin) {
         console.log(`[DEBUG ${timestamp}] Access denied - User role:`, token.role, 'isAdmin:', token.isAdmin);
@@ -26,91 +24,73 @@ export async function GET(req: NextRequest) {
       }
 
       console.log(`[DEBUG ${timestamp}] GET /api/admin/orders called by admin`);
-      
-      // Get query parameters
+
       const { searchParams } = new URL(req.url);
       const showShippedOnly = searchParams.get('shipped') === 'true';
       const status = searchParams.get('status');
       const limit = parseInt(searchParams.get('limit') || '50');
       const page = parseInt(searchParams.get('page') || '1');
-      
-      // Build query
+
       let query = ORDERS.orderBy('createdAt', 'desc');
-      
+
       if (showShippedOnly) {
         query = query.where('status', '==', 'shipped');
       } else if (status && ['pending', 'completed', 'shipped', 'delivered', 'cancelled'].includes(status)) {
         query = query.where('status', '==', status);
       }
-      
-      // Apply pagination
+
       if (page > 1) {
         const offset = (page - 1) * limit;
         query = query.offset(offset);
       }
       query = query.limit(limit);
-      
+
       const snap = await query.get();
-      
       console.log(`[DEBUG ${timestamp}] Orders found:`, snap.size);
-      
+
       const orders = [];
       const userCache = new Map();
 
+      // Helper to convert Firestore timestamps safely
+      const toISOString = (timestamp: any) => {
+        try {
+          if (!timestamp) return null;
+          if (typeof timestamp.toDate === 'function') return timestamp.toDate().toISOString();
+          if (timestamp instanceof Date) return timestamp.toISOString();
+          if (typeof timestamp === 'string') return new Date(timestamp).toISOString();
+          return null;
+        } catch {
+          return null;
+        }
+      };
+
       for (const doc of snap.docs) {
         const data = doc.data();
-        console.log(`[DEBUG ${timestamp}] Processing order:`, doc.id);
 
-        // Helper function to safely convert Firestore timestamp to ISO string
-        const toISOString = (timestamp: any) => {
-          try {
-            if (!timestamp) return null;
-            if (typeof timestamp.toDate === 'function') {
-              return timestamp.toDate().toISOString();
-            }
-            if (timestamp instanceof Date) {
-              return timestamp.toISOString();
-            }
-            if (typeof timestamp === 'string') {
-              return new Date(timestamp).toISOString();
-            }
-            return null;
-          } catch (e) {
-            console.error(`[DEBUG ${timestamp}] Date conversion error for order ${doc.id}:`, e);
-            return null;
-          }
-        };
-
-        // Get user details if not cached
-        let userDetails = null;
         if (data.userId && !userCache.has(data.userId)) {
           try {
             const userSnap = await USERS.doc(data.userId).get();
             if (userSnap.exists) {
               const userData = userSnap.data();
-              userDetails = {
+              userCache.set(data.userId, {
                 email: userData?.email || 'Unknown',
                 name: userData?.name || userData?.displayName || 'Unknown User',
                 phone: userData?.phone || null
-              };
-              userCache.set(data.userId, userDetails);
+              });
             } else {
-              userDetails = { email: 'Unknown', name: 'Unknown User', phone: null };
-              userCache.set(data.userId, userDetails);
+              userCache.set(data.userId, { email: 'Unknown', name: 'Unknown User', phone: null });
             }
-          } catch (userError) {
-            console.error(`[DEBUG ${timestamp}] Error fetching user ${data.userId}:`, userError);
-            userDetails = { email: 'Unknown', name: 'Unknown User', phone: null };
-            userCache.set(data.userId, userDetails);
+          } catch {
+            userCache.set(data.userId, { email: 'Unknown', name: 'Unknown User', phone: null });
           }
-        } else if (data.userId) {
-          userDetails = userCache.get(data.userId);
         }
 
-        const order = {
+        const userDetails = userCache.get(data.userId) || { email: 'Unknown', name: 'Unknown User', phone: null };
+
+        orders.push({
           id: doc.id,
           userId: data.userId || 'unknown',
-          userDetails: userDetails || { email: 'Unknown', name: 'Unknown User', phone: null },
+          userDetails,
           items: Array.isArray(data.items) ? data.items.map((item: any) => ({
             productId: item.productId || '',
             name: item.name || 'Unknown Product',
@@ -131,17 +111,13 @@ export async function GET(req: NextRequest) {
           shippedAt: toISOString(data.shippedAt),
           deliveredAt: toISOString(data.deliveredAt),
           cancelledAt: toISOString(data.cancelledAt)
-        };
-
-        orders.push(order);
+        });
       }
-      
-      // Get total count for pagination
-      const totalQuery = ORDERS.select(); // More efficient count query
+
+      const totalQuery = ORDERS.select();
       const totalSnap = await totalQuery.get();
       const total = totalSnap.size;
 
-      // Calculate statistics
       const stats = {
         total: orders.length,
         pending: orders.filter(o => o.status === 'pending').length,
@@ -173,28 +149,17 @@ export async function GET(req: NextRequest) {
 
     } catch (error) {
       console.error('[DEBUG] Admin Orders GET error:', error);
-      
-      // Handle Firestore index errors
       if (error && typeof error === 'object' && 'code' in error && error.code === 9) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: 'Database index required. Please create composite index for orders collection.',
           details: 'Create index with fields: createdAt (Descending), status (Ascending)',
           indexRequired: true
         }, { status: 500 });
       }
 
-      // Detailed error logging
-      if (error instanceof Error) {
-        console.error('[DEBUG] Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-      }
-      
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: false,
-        error: 'Failed to fetch orders', 
+        error: 'Failed to fetch orders',
         details: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       }, { status: 500 });
@@ -202,16 +167,16 @@ export async function GET(req: NextRequest) {
   }, { requireAdmin: true });
 }
 
+
 // PATCH: Update order status (mark as shipped/delivered)
 export async function PATCH(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
       const timestamp = new Date().toISOString();
-      
-      // Verify admin role
-      const isAdmin = token.role === 'admin' || 
-                     token.isAdmin === true || 
-                     token.admin === true;
+
+      const isAdmin = token.role === 'admin' ||
+                      token.isAdmin === true ||
+                      token.admin === true;
 
       if (!isAdmin) {
         console.log(`[DEBUG ${timestamp}] Access denied - User role:`, token.role);
@@ -227,8 +192,8 @@ export async function PATCH(req: NextRequest) {
       // Determine the status to set
       let newStatus = status;
       if (action) {
-        if (!['shipped', 'delivered', 'cancelled'].includes(action)) {
-          return NextResponse.json({ error: 'Invalid action. Must be shipped, delivered, or cancelled' }, { status: 400 });
+        if (!['shipped', 'delivered', 'cancelled', 'completed'].includes(action)) {
+          return NextResponse.json({ error: 'Invalid action. Must be shipped, delivered, cancelled, or completed' }, { status: 400 });
         }
         newStatus = action;
       }
@@ -237,10 +202,9 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
       }
 
-      // Get order
       const orderRef = ORDERS.doc(orderId);
       const orderSnap = await orderRef.get();
-      
+
       if (!orderSnap.exists) {
         return NextResponse.json({ error: 'Order not found' }, { status: 404 });
       }
@@ -251,7 +215,6 @@ export async function PATCH(req: NextRequest) {
         updatedAt: now
       };
 
-      // Add status-specific fields
       if (newStatus === 'shipped') {
         updateData.shippedAt = now;
         if (trackingNumber) updateData.trackingNumber = trackingNumber;
@@ -262,6 +225,9 @@ export async function PATCH(req: NextRequest) {
         }
       } else if (newStatus === 'cancelled') {
         updateData.cancelledAt = now;
+      } else if (newStatus === 'completed') {
+        // Optional: add completedAt timestamp if you want
+        updateData.completedAt = now;
       }
 
       if (notes) {
@@ -272,12 +238,11 @@ export async function PATCH(req: NextRequest) {
 
       console.log(`[DEBUG ${timestamp}] Order ${orderId} updated to ${newStatus}`);
 
-      // Get updated order data
       const updatedOrderSnap = await orderRef.get();
       const updatedOrder = updatedOrderSnap.data();
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         message: `Order ${newStatus} successfully`,
         order: {
           id: orderId,
@@ -287,7 +252,8 @@ export async function PATCH(req: NextRequest) {
           updatedAt: updatedOrder?.updatedAt?.toDate?.()?.toISOString?.(),
           shippedAt: updatedOrder?.shippedAt?.toDate?.()?.toISOString?.(),
           deliveredAt: updatedOrder?.deliveredAt?.toDate?.()?.toISOString?.(),
-          cancelledAt: updatedOrder?.cancelledAt?.toDate?.()?.toISOString?.()
+          cancelledAt: updatedOrder?.cancelledAt?.toDate?.()?.toISOString?.(),
+          completedAt: updatedOrder?.completedAt?.toDate?.()?.toISOString?.()
         }
       });
 
@@ -296,7 +262,7 @@ export async function PATCH(req: NextRequest) {
       if (error && typeof error === 'object' && 'code' in error) {
         return handleFirebaseError(error);
       }
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: false,
         error: 'Failed to update order status',
         details: error instanceof Error ? error.message : 'Unknown error',
@@ -311,11 +277,10 @@ export async function DELETE(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
       const timestamp = new Date().toISOString();
-      
-      // Verify admin role
-      const isAdmin = token.role === 'admin' || 
-                     token.isAdmin === true || 
-                     token.admin === true;
+
+      const isAdmin = token.role === 'admin' ||
+                      token.isAdmin === true ||
+                      token.admin === true;
 
       if (!isAdmin) {
         console.log(`[DEBUG ${timestamp}] Access denied - User role:`, token.role);
@@ -329,30 +294,23 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
       }
 
-      // Get order to verify it exists
       const orderRef = ORDERS.doc(orderId);
       const orderSnap = await orderRef.get();
-      
+
       if (!orderSnap.exists) {
         return NextResponse.json({ error: 'Order not found' }, { status: 404 });
       }
 
-      // Get order data for potential stock restoration
-      const orderData = orderSnap.data();
-
-      // Use transaction to delete order and potentially restore stock
       await adminDB.runTransaction(async (transaction: any) => {
-        // Delete the order
         transaction.delete(orderRef);
 
-        // If order was pending and had stock deductions, restore them
-        if (orderData?.status === 'pending' && orderData?.items) {
+        if (orderSnap.data()?.status === 'pending' && orderSnap.data()?.items) {
           const PRODUCTS = adminDB.collection('products');
-          
-          for (const item of orderData.items) {
+
+          for (const item of orderSnap.data()?.items || []) {
             const productRef = PRODUCTS.doc(item.productId);
             const productSnap = await transaction.get(productRef);
-            
+
             if (productSnap.exists) {
               const productData = productSnap.data()!;
               if (productData.stock !== undefined) {
@@ -368,8 +326,8 @@ export async function DELETE(req: NextRequest) {
 
       console.log(`[DEBUG ${timestamp}] Order ${orderId} deleted by admin`);
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         message: 'Order deleted successfully',
         orderId: orderId
       });
@@ -379,7 +337,7 @@ export async function DELETE(req: NextRequest) {
       if (error && typeof error === 'object' && 'code' in error) {
         return handleFirebaseError(error);
       }
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: false,
         error: 'Failed to delete order',
         details: error instanceof Error ? error.message : 'Unknown error',
