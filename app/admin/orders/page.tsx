@@ -18,12 +18,16 @@ import {
 
 interface ShippingInfo {
   name?: string;
+  firstName?: string;
+  lastName?: string;
   email?: string;
   phone?: string;
   address?: string;
   city?: string;
   state?: string;
+  zip?: string;
   pinCode?: string;
+  notes?: string;
 }
 
 interface UserDetails {
@@ -104,8 +108,11 @@ export default function AdminOrdersPage() {
         throw new Error(errorData.error || `HTTP ${res.status}: ${res.statusText}`);
       }
       const data: AdminOrdersResponse = await res.json();
+      console.log('[DEBUG] Admin orders API response:', data); // Debug log
+      
       if (data.success !== false && data.orders) {
         setOrders(data.orders);
+        console.log('[DEBUG] First order sample:', data.orders[0]); // Debug log
       } else {
         setOrders([]);
       }
@@ -121,58 +128,57 @@ export default function AdminOrdersPage() {
   };
 
   const handleShipOrder = async (order: Order) => {
-  try {
-    setUpdating(true);
-    console.log('Sending PATCH to update order:', order.id); // debug log
+    try {
+      setUpdating(true);
+      console.log('Sending PATCH to update order:', order.id);
 
-    const res = await fetch('/api/admin/orders', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        orderId: order.id,    // Direct field, no nesting
-        status: 'completed',  // lowercase, valid status
-        action: 'completed'   // value consistent with status
-      }),
-    });
+      const res = await fetch('/api/admin/orders', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          orderId: order.id,
+          status: 'completed',
+          action: 'completed'
+        }),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to update order');
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update order');
+      }
+
+      setOrders(current =>
+        current.map(o =>
+          o.id === order.id
+            ? { ...o, status: 'completed', updatedAt: new Date().toISOString() }
+            : o
+        )
+      );
+
+      toast({
+        title: 'Order Completed',
+        description: `Order ${order.id.substring(0, 8)}... marked as completed.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update order status';
+      toast({
+        title: 'Error',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdating(false);
     }
-
-    setOrders(current =>
-      current.map(o =>
-        o.id === order.id
-          ? { ...o, status: 'completed', updatedAt: new Date().toISOString() }
-          : o
-      )
-    );
-
-    toast({
-      title: 'Order Completed',
-      description: `Order ${order.id.substring(0, 8)}... marked as completed.`,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to update order status';
-    toast({
-      title: 'Error',
-      description: message,
-      variant: 'destructive',
-    });
-  } finally {
-    setUpdating(false);
-  }
-};
-
+  };
 
   const handleDeleteOrder = async (order: Order) => {
     try {
       setUpdating(true);
-      const res = await fetch(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
+      const res = await fetch(`/api/admin/orders?orderId=${encodeURIComponent(order.id)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -239,20 +245,74 @@ export default function AdminOrdersPage() {
     }
   };
 
+  // Enhanced customer name extraction with debugging
   const getCustomerName = (order: Order) => {
-    return order.userDetails?.name ||
-           order.shippingInfo?.name ||
-           order.userDetails?.email ||
-           order.shippingInfo?.email ||
-           'Unknown User';
+    // Debug logging for troubleshooting
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[DEBUG] Order ${order.id} customer data:`, {
+        userDetails: order.userDetails,
+        shippingInfo: order.shippingInfo
+      });
+    }
+
+    // Try userDetails name first
+    if (order.userDetails?.name && order.userDetails.name !== 'Unknown User' && order.userDetails.name.trim()) {
+      return order.userDetails.name;
+    }
+    
+    // Try shipping info combined name
+    if (order.shippingInfo?.name && order.shippingInfo.name.trim()) {
+      return order.shippingInfo.name;
+    }
+    
+    // Try combining firstName and lastName from shipping info
+    const firstName = order.shippingInfo?.firstName?.trim() || '';
+    const lastName = order.shippingInfo?.lastName?.trim() || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+    
+    if (fullName && fullName.length > 1) {
+      return fullName;
+    }
+    
+    // Try extracting name from email
+    const email = order.userDetails?.email || order.shippingInfo?.email;
+    if (email && email.includes('@') && !email.includes('example.com')) {
+      const namePart = email.split('@')[0];
+      if (namePart && namePart.length > 2 && !namePart.match(/^user\d+$/i)) {
+        return namePart.replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      }
+    }
+    
+    // Last resort - return phone if available
+    const phone = order.shippingInfo?.phone || order.userDetails?.phone;
+    if (phone && phone.trim() && phone !== 'N/A') {
+      return `Customer (${phone.slice(-4)})`;
+    }
+    
+    return 'Unknown User';
   };
 
   const getCustomerEmail = (order: Order) => {
-    return order.userDetails?.email || order.shippingInfo?.email || 'N/A';
+    const email = order.userDetails?.email || order.shippingInfo?.email;
+    return email && email.trim() && !email.includes('example.com') ? email : 'Unknown Email';
   };
 
   const getCustomerPhone = (order: Order) => {
-    return order.userDetails?.phone || order.shippingInfo?.phone || 'N/A';
+    const phone = order.shippingInfo?.phone || order.userDetails?.phone;
+    return phone && phone.trim() && phone !== 'N/A' ? phone : 'No Phone';
+  };
+
+  const getCustomerAddress = (order: Order) => {
+    if (!order.shippingInfo) return 'No Address';
+    
+    const parts = [
+      order.shippingInfo.address,
+      order.shippingInfo.city,
+      order.shippingInfo.state,
+      order.shippingInfo.pinCode || order.shippingInfo.zip
+    ].filter(part => part && part.trim());
+    
+    return parts.length > 0 ? parts.join(', ') : 'No Address';
   };
 
   const stats = {
@@ -317,6 +377,23 @@ export default function AdminOrdersPage() {
           </div>
         </div>
       </div>
+
+      {/* Debug Info Panel - Remove in production */}
+      {process.env.NODE_ENV === 'development' && orders.length > 0 && (
+        <div className="border rounded-lg p-4 bg-yellow-50 text-xs">
+          <h3 className="font-semibold mb-2">Debug Info (First Order):</h3>
+          <pre className="whitespace-pre-wrap text-xs">
+            {JSON.stringify({
+              orderId: orders[0].id,
+              userDetails: orders[0].userDetails,
+              shippingInfo: orders[0].shippingInfo,
+              extractedName: getCustomerName(orders[0]),
+              extractedEmail: getCustomerEmail(orders[0]),
+              extractedPhone: getCustomerPhone(orders[0])
+            }, null, 2)}
+          </pre>
+        </div>
+      )}
 
       <div className="border rounded-lg overflow-x-auto">
         <Table>
@@ -456,14 +533,25 @@ export default function AdminOrdersPage() {
                   <p><strong>Name:</strong> {getCustomerName(selectedOrder)}</p>
                   <p><strong>Email:</strong> {getCustomerEmail(selectedOrder)}</p>
                   <p><strong>Phone:</strong> {getCustomerPhone(selectedOrder)}</p>
-                  <p><strong>Address:</strong> {selectedOrder.shippingInfo?.address || 'N/A'}</p>
-                  <p>
-                    {selectedOrder.shippingInfo?.city}
-                    {selectedOrder.shippingInfo?.state && `, ${selectedOrder.shippingInfo.state}`}
-                    {selectedOrder.shippingInfo?.pinCode && ` - ${selectedOrder.shippingInfo.pinCode}`}
-                  </p>
+                  <p><strong>Address:</strong> {getCustomerAddress(selectedOrder)}</p>
+                  {selectedOrder.shippingInfo?.notes && (
+                    <p><strong>Notes:</strong> {selectedOrder.shippingInfo.notes}</p>
+                  )}
                 </div>
               </div>
+
+              {/* Raw Data Debug Section - Remove in production */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="border rounded p-3 bg-gray-100 text-xs">
+                  <h4 className="font-semibold mb-2">Raw Order Data (Debug):</h4>
+                  <details>
+                    <summary className="cursor-pointer">Click to expand</summary>
+                    <pre className="mt-2 whitespace-pre-wrap">
+                      {JSON.stringify(selectedOrder, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              )}
 
               <div>
                 <h3 className="font-semibold mb-2">Order Items</h3>
