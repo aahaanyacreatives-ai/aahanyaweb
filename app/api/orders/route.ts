@@ -1,3 +1,4 @@
+// app/api/orders/route.ts - FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDB, serverTimestamp, Timestamp } from '@/lib/firebaseAdmin';
 import { withAuth } from '@/lib/auth-middleware';
@@ -8,6 +9,7 @@ import crypto from 'crypto';
 const ORDERS = adminDB.collection('orders');
 const CART = adminDB.collection('cart');
 const PRODUCTS = adminDB.collection('products');
+const USERS = adminDB.collection('users'); // Add users collection
 
 export async function GET(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
@@ -54,7 +56,6 @@ export async function GET(req: NextRequest) {
   });
 }
 
-
 export async function POST(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
     try {
@@ -62,11 +63,49 @@ export async function POST(req: NextRequest) {
       if (!userId) {
         return NextResponse.json({ error: 'User ID not found in token' }, { status: 400 });
       }
-      const { shippingInfo } = await req.json();
+      
+      // ✅ FIXED: Get both shippingInfo and cartItems from request
+      const { 
+        shippingInfo, 
+        cartItems, 
+        subtotal, 
+        shipping, 
+        totalAmount, 
+        appliedCoupon 
+      } = await req.json();
 
-      const cartSnap = await CART.where('userId', '==', userId).get();
-      if (cartSnap.empty) {
+      console.log('[DEBUG] Order creation request:', {
+        userId,
+        shippingInfo,
+        cartItemsCount: cartItems?.length,
+        totalAmount
+      });
+
+      // ✅ FIXED: Use cartItems from request instead of fetching from cart collection
+      if (!cartItems || cartItems.length === 0) {
         return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
+      }
+
+      // ✅ FIXED: Get user details for better customer information
+      interface UserDetails {
+        email?: string;
+        name?: string;
+        phone?: string;
+      }
+
+      let userDetails: UserDetails = {};
+      try {
+        const userDoc = await USERS.doc(userId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          userDetails = {
+            email: userData?.email || '',
+            name: userData?.name || userData?.displayName || '',
+            phone: userData?.phone || ''
+          };
+        }
+      } catch (userError) {
+        console.warn('[DEBUG] Could not fetch user details:', userError);
       }
 
       const orderRef = ORDERS.doc();
@@ -75,46 +114,88 @@ export async function POST(req: NextRequest) {
       try {
         await adminDB.runTransaction(async (transaction: any) => {
           const items: any[] = [];
-          let totalAmount = 0;
 
-          for (const cartDoc of cartSnap.docs) {
-            const cartData = cartDoc.data();
-            const productRef = PRODUCTS.doc(cartData.productId);
+          // ✅ FIXED: Process cartItems directly from request
+          for (const cartItem of cartItems) {
+            const product = cartItem.product;
+            
+            // Verify product still exists
+            const productRef = PRODUCTS.doc(product.id);
             const productSnap = await transaction.get(productRef);
-            if (!productSnap.exists) throw new Error(`Product ${cartData.productId} no longer exists`);
+            
+            if (!productSnap.exists) {
+              throw new Error(`Product ${product.id} no longer exists`);
+            }
+            
             const productData = productSnap.data()!;
 
             const orderItem = {
-              productId: cartData.productId,
-              name: productData.name || cartData.name || 'Unknown Product',
-              image: cartData.image || productData.images?.[0] || null,
-              price: productData.price || cartData.price || 0,
-              quantity: cartData.quantity || 1,
-              customSize: cartData.customSize || null,
-              customImage: cartData.customImage || null
+              productId: product.id,
+              name: product.name || productData.name || 'Unknown Product',
+              image: product.images?.[0] || productData.images?.[0] || null,
+              price: product.price || productData.price || 0,
+              quantity: cartItem.quantity || 1,
+              customSize: cartItem.customSize || null,
+              customImage: cartItem.customImage || null
             };
+            
             items.push(orderItem);
-            totalAmount += orderItem.price * orderItem.quantity;
           }
 
           const now = Timestamp.now();
+          
+          // ✅ FIXED: Enhanced order data with complete customer information
           orderData = {
             userId,
             items,
-            totalAmount,
-            status: 'pending',         // Default status pending
+            totalAmount: totalAmount || 0,
+            subtotal: subtotal || 0,
+            shipping: shipping || 0,
+            appliedCoupon: appliedCoupon || null,
+            status: 'pending',
             orderDate: now,
             createdAt: now,
             updatedAt: now,
             paymentDetails: {},
-            paymentStatus: 'pending',  // Payment pending initially
-            shippingInfo: shippingInfo || {},
+            paymentStatus: 'pending',
+            
+            // ✅ FIXED: Complete shipping information with proper mapping
+            shippingInfo: {
+              firstName: shippingInfo?.firstName || '',
+              lastName: shippingInfo?.lastName || '',
+              name: `${shippingInfo?.firstName || ''} ${shippingInfo?.lastName || ''}`.trim() || userDetails.name || '',
+              email: userDetails.email || shippingInfo?.email || '',
+              phone: shippingInfo?.phone || userDetails.phone || '',
+              address: shippingInfo?.address || '',
+              city: shippingInfo?.city || '',
+              state: shippingInfo?.state || '',
+              zip: shippingInfo?.zip || '',
+              pinCode: shippingInfo?.zip || '',
+              notes: shippingInfo?.notes || ''
+            },
+            
+            // ✅ FIXED: Store user details separately for admin panel
+            userDetails: {
+              email: userDetails.email || shippingInfo?.firstName + '@example.com',
+              name: userDetails.name || `${shippingInfo?.firstName || ''} ${shippingInfo?.lastName || ''}`.trim() || 'Unknown User',
+              phone: shippingInfo?.phone || userDetails.phone || 'N/A'
+            },
+            
             id: orderRef.id
           };
 
+          console.log('[DEBUG] Creating order with data:', {
+            orderId: orderRef.id,
+            userId,
+            itemsCount: items.length,
+            shippingInfo: orderData.shippingInfo,
+            userDetails: orderData.userDetails
+          });
+
           transaction.set(orderRef, orderData);
-          cartSnap.docs.forEach((doc: any) => transaction.delete(doc.ref));
         });
+
+        console.log('[DEBUG] Order created successfully:', orderRef.id);
 
         return NextResponse.json({
           success: true,
@@ -123,6 +204,7 @@ export async function POST(req: NextRequest) {
         }, { status: 201 });
 
       } catch (transactionError) {
+        console.error('[DEBUG] Transaction error:', transactionError);
         if (transactionError instanceof Error && transactionError.message.includes('Insufficient stock')) {
           return NextResponse.json({
             error: 'Insufficient stock',
@@ -143,7 +225,6 @@ export async function POST(req: NextRequest) {
     }
   });
 }
-
 
 export async function PATCH(req: NextRequest) {
   return withAuth(req, async (req: NextRequest, token: any) => {
@@ -191,7 +272,7 @@ export async function PATCH(req: NextRequest) {
       }
 
       const updateData = {
-        paymentStatus: 'success',    // Important: status NOT updated here
+        paymentStatus: 'success',
         paymentDetails: {
           razorpay_order_id,
           razorpay_payment_id,

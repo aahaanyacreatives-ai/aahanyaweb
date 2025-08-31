@@ -201,7 +201,7 @@ export default function CheckoutPage() {
     }
   }
 
-  // ✅ FIXED: Enhanced order placement with better error handling
+  // ✅ FIXED: Enhanced order placement with complete order data
   const handlePlaceOrder = async (event: React.FormEvent) => {
     event.preventDefault()
     setLoading(true)
@@ -354,18 +354,22 @@ export default function CheckoutPage() {
             const verifyResult = await verifyResponse.json()
             console.log("[DEBUG] Payment verified successfully")
 
-            // Step 2: Create order in database
+            // Step 2: Create order in database with complete data
             const shippingInfo = {
               firstName,
               lastName,
+              name: `${firstName} ${lastName}`.trim(),
+              email: session.user.email || '',
+              phone,
               address,
               city,
               state,
               zip,
-              phone,
+              pinCode: zip,
               notes: notes || ""
             }
 
+            // ✅ FIXED: Send complete order data including cartItems
             const orderData = {
               shippingInfo,
               cartItems: cartItems.map(item => ({
@@ -390,7 +394,11 @@ export default function CheckoutPage() {
               } : null
             }
 
-            console.log("[DEBUG] Creating order with data...")
+            console.log("[DEBUG] Creating order with complete data:", {
+              shippingInfo,
+              cartItemsCount: orderData.cartItems.length,
+              totalAmount: orderData.totalAmount
+            })
 
             const createOrderResponse = await fetch("/api/orders", {
               method: "POST",
