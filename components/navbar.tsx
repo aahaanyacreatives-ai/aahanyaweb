@@ -80,8 +80,8 @@ export function Navbar() {
   return (
     <>
       {/* Top Announcement Bar */}
-      <div className="w-full bg-primary text-primary-foreground text-center text-xs py-1.5">
-         
+      <div className="w-full bg-primary text-primary-foreground text-center text-sm py-2 font-medium">
+        Use code <span className="font-bold">LAUNCH10</span> to get discount on your first order!
       </div>
 
       <header className="sticky top-0 z-50 w-full border-b bg-primary text-primary-foreground">
