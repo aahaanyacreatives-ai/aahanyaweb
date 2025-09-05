@@ -52,11 +52,13 @@ export function Navbar() {
 
   // ‼️ Do not render the public navbar inside the admin area
   if (onAdmin) return null;
+  
   const { cartItems } = useCart();
   const { favoriteProductIds } = useFavorites();
   const { data: session, status } = useSession();
   const totalItemsInCart = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isAdmin = (session?.user as any)?.role === "admin";
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -67,6 +69,7 @@ export function Navbar() {
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/" });
+    setIsSidebarOpen(false); // Close sidebar after logout
   };
 
   const handleSearch = (event: React.FormEvent) => {
@@ -74,7 +77,13 @@ export function Navbar() {
     if (searchQuery.trim()) {
       router.push(`/search?query=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery("");
+      setIsSidebarOpen(false); // Close sidebar after search
     }
+  };
+
+  // Function to close sidebar when navigation links are clicked
+  const handleNavLinkClick = () => {
+    setIsSidebarOpen(false);
   };
 
   return (
@@ -88,7 +97,7 @@ export function Navbar() {
         <div className="container flex h-16 items-center justify-between px-4 md:px-6">
           {/* Left Section: Menu (Mobile), Brand Name, and Search (Desktop) */}
           <div className="flex items-center gap-4">
-            <Sheet>
+            <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden text-primary-foreground">
                   <Menu className="h-6 w-6" />
@@ -112,25 +121,55 @@ export function Navbar() {
                     </Button>
                   </form>
 
-                  <Link href="/" className="text-lg font-semibold" prefetch={false}>
+                  <Link 
+                    href="/" 
+                    className="text-lg font-semibold" 
+                    prefetch={false}
+                    onClick={handleNavLinkClick}
+                  >
                     Home
                   </Link>
-                  <Link href="/female-collection" className="text-lg font-semibold" prefetch={false}>
+                  <Link 
+                    href="/female-collection" 
+                    className="text-lg font-semibold" 
+                    prefetch={false}
+                    onClick={handleNavLinkClick}
+                  >
                     Female Collection
                   </Link>
-                  <Link href="/male-collection" className="text-lg font-semibold" prefetch={false}>
+                  <Link 
+                    href="/male-collection" 
+                    className="text-lg font-semibold" 
+                    prefetch={false}
+                    onClick={handleNavLinkClick}
+                  >
                     Male Collection
                   </Link>
-                  <Link href="/metal-art" className="text-lg font-semibold" prefetch={false}>
+                  <Link 
+                    href="/metal-art" 
+                    className="text-lg font-semibold" 
+                    prefetch={false}
+                    onClick={handleNavLinkClick}
+                  >
                     Metal Art
                   </Link>
                   {status === "authenticated" && (
-                    <Link href="/my-orders" className="text-lg font-semibold flex items-center gap-2" prefetch={false}>
+                    <Link 
+                      href="/my-orders" 
+                      className="text-lg font-semibold flex items-center gap-2" 
+                      prefetch={false}
+                      onClick={handleNavLinkClick}
+                    >
                       <Package className="mr-2 h-5 w-5" /> My Orders
                     </Link>
                   )}
                   {isAdmin && (
-                    <Link href="/admin/dashboard" className="text-lg font-semibold" prefetch={false}>
+                    <Link 
+                      href="/admin/dashboard" 
+                      className="text-lg font-semibold" 
+                      prefetch={false}
+                      onClick={handleNavLinkClick}
+                    >
                       Admin
                     </Link>
                   )}
@@ -139,11 +178,21 @@ export function Navbar() {
                       <LogOut className="mr-2 h-5 w-5" /> Logout
                     </Button>
                   ) : (
-                    <Link href="/login" className="text-lg font-semibold" prefetch={false}>
+                    <Link 
+                      href="/login" 
+                      className="text-lg font-semibold" 
+                      prefetch={false}
+                      onClick={handleNavLinkClick}
+                    >
                       Login / Register
                     </Link>
                   )}
-                  <Link href="/favorites" className="text-lg font-semibold flex items-center gap-2" prefetch={false}>
+                  <Link 
+                    href="/favorites" 
+                    className="text-lg font-semibold flex items-center gap-2" 
+                    prefetch={false}
+                    onClick={handleNavLinkClick}
+                  >
                     Favorites
                     {favoriteProductIds.length > 0 && (
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
@@ -151,7 +200,12 @@ export function Navbar() {
                       </span>
                     )}
                   </Link>
-                  <Link href="/cart" className="text-lg font-semibold flex items-center gap-2" prefetch={false}>
+                  <Link 
+                    href="/cart" 
+                    className="text-lg font-semibold flex items-center gap-2" 
+                    prefetch={false}
+                    onClick={handleNavLinkClick}
+                  >
                     Cart
                     {totalItemsInCart > 0 && (
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
